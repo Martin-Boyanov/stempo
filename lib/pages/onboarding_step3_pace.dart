@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../ui/widgets/primary_button.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lottie/lottie.dart';
 
 class OnboardingPace extends StatefulWidget {
   const OnboardingPace({super.key});
@@ -26,7 +27,12 @@ class _OnboardingPaceState extends State<OnboardingPace> {
               style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700),
               textAlign: TextAlign.center,
             ),
-
+            const SizedBox(height: 8),
+            Lottie.asset(
+              'assets/animations/walking.json',
+              repeat: true,
+              animate: true,
+            ),
             const SizedBox(height: 8),
             const Text(
               "(You'll be able to set different modes later)",

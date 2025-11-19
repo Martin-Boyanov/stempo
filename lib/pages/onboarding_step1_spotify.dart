@@ -2,28 +2,95 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../ui/widgets/primary_button.dart';
 
-class OnboardingSpotify extends StatelessWidget {
+class OnboardingSpotify extends StatefulWidget {
   const OnboardingSpotify({super.key});
+
+  @override
+  State<OnboardingSpotify> createState() => _OnboardingSpotifyState();
+}
+
+class _OnboardingSpotifyState extends State<OnboardingSpotify>
+    with TickerProviderStateMixin {
+
+  late AnimationController waveController;
+  late Animation<double> slideAnim;
+
+  @override
+  void initState() {
+    super.initState();
+
+    // 100 BPM → beat = 600 ms → forward+reverse = 1.2 sec
+    waveController = AnimationController(
+      duration: const Duration(milliseconds: 1200), // 100 bpm
+      vsync: this,
+    )..repeat(reverse: true);
+
+    slideAnim = Tween<double>(begin: -1.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: waveController,
+        curve: Curves.easeInOutCubic, // more punchy, rhythmic
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    waveController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(), // back on later screens only
+      appBar: AppBar(),
       body: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              "Walk to your rhythm.",
-              style: TextStyle(fontSize: 32, fontWeight: FontWeight.w700),
+
+            AnimatedBuilder(
+              animation: slideAnim,
+              builder: (_, __) {
+                final double t = slideAnim.value;
+                return ShaderMask(
+                  shaderCallback: (rect) {
+                    return LinearGradient(
+                      begin: Alignment(t, 0),
+                      end: Alignment(t + 2, 0),
+                      tileMode: TileMode.mirror,
+                      colors: const [
+                        Color(0xFF3AFF8C),
+                        Color(0xFF1DB954),
+                        Color(0xFF0D4C23),
+                        Color(0xFF1DB954),
+                        Color(0xFF3AFF8C),
+                      ],
+                      stops: const [0.0, 0.25, 0.5, 0.75, 1.0],
+                    ).createShader(rect);
+                  },
+                  blendMode: BlendMode.srcATop,
+                  child: const Center(
+                    child: Text(
+                      "Walk to your rhythm",
+                      style: TextStyle(
+                        fontSize: 34,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.2,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
+
             const SizedBox(height: 40),
 
             PrimaryButton(
               text: "Login with Spotify",
-              onPressed: () => context.push('/motion'), // <-- FIXED
+              onPressed: () => context.push('/motion'),
             ),
           ],
         ),
