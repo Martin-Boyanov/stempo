@@ -89,9 +89,9 @@ class _OnboardingSpotifyState extends State<OnboardingSpotify>
                     child: Text(
                       "Walk to your rhythm",
                       style: TextStyle(
-                        fontSize: 34,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 1.2,
+                        fontSize: 32,
+                        fontWeight: FontWeight.w400,
+                        letterSpacing: 0.6,
                         color: Colors.white,
                       ),
                     ),

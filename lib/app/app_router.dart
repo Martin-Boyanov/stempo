@@ -1,5 +1,6 @@
 import 'package:go_router/go_router.dart';
 
+import '../pages/home_page.dart';
 import '../pages/onboarding_step1_spotify.dart';
 import '../pages/onboarding_step2_motion.dart';
 import '../pages/onboarding_step3_pace.dart';
@@ -19,6 +20,10 @@ class AppRouter {
       GoRoute(
         path: '/pace',
         builder: (context, state) => const OnboardingPace(),
+      ),
+      GoRoute(
+        path: '/home',
+        builder: (context, state) => const HomePage(),
       ),
     ],
   );

@@ -1,17 +1,27 @@
 import 'package:flutter/material.dart';
+import 'colors.dart';
 
 class AppTheme {
   static ThemeData light = ThemeData(
     useMaterial3: true,
-    scaffoldBackgroundColor: const Color.fromARGB(255, 37, 37, 37),
+
+    fontFamily: 'BBHBogle',
+
+    scaffoldBackgroundColor: AppColors.background,
     colorScheme: ColorScheme.fromSeed(
-      seedColor: Colors.green,
+      seedColor: AppColors.primary,
       brightness: Brightness.dark,
     ),
+    appBarTheme: const AppBarTheme(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      foregroundColor: AppColors.textPrimary,
+    ),
+    cardColor: AppColors.surface,
     textTheme: const TextTheme(
-      bodyMedium: TextStyle(color: Colors.white),
+      bodyMedium: TextStyle(color: AppColors.textPrimary),
       headlineMedium: TextStyle(
-        color: Colors.white,
+        color: AppColors.textPrimary,
         fontWeight: FontWeight.bold,
       ),
     ),
