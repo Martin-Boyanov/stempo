@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'search_page.dart';
 import '../ui/theme/colors.dart';
 
 class HomePage extends StatefulWidget {
@@ -65,6 +66,11 @@ class _HomePageState extends State<HomePage>
   late final AnimationController _pulseController;
   int _selectedTab = 0;
 
+  RangeValues get _preferredSearchRange => RangeValues(
+        (_mockState.userCadence - 6).toDouble(),
+        (_mockState.userCadence + 6).toDouble(),
+      );
+
   @override
   void initState() {
     super.initState();
@@ -85,6 +91,7 @@ class _HomePageState extends State<HomePage>
     return Scaffold(
       body: SafeArea(
         child: Stack(
+          fit: StackFit.expand,
           children: [
             const Positioned.fill(
               child: DecoratedBox(
@@ -102,47 +109,185 @@ class _HomePageState extends State<HomePage>
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
-              child: Column(
-                children: [
-                  Expanded(
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.only(bottom: 172),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _DailyStepsHero(
-                            state: _mockState,
-                            pulse: _pulseController,
-                          ),
-                          const SizedBox(height: 18),
-                          _StartSessionCard(state: _mockState),
-                          const SizedBox(height: 18),
-                          const _SectionLabel(
-                            title: 'Jump back in',
-                            trailing: 'Last synced',
-                          ),
-                          const SizedBox(height: 12),
-                          _JumpBackInRow(items: _mockState.jumpBackItems),
-                          const SizedBox(height: 18),
-                          const _SectionLabel(
-                            title: 'Playlist',
-                            trailing: 'Spotify feel',
-                          ),
-                          const SizedBox(height: 12),
-                          _PlaylistCard(state: _mockState),
-                        ],
-                      ),
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                child: KeyedSubtree(
+                  key: ValueKey(_selectedTab),
+                  child: _buildSelectedTabBody(),
+                ),
+              ),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: IgnorePointer(
+                child: Container(
+                  height: 220,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        AppColors.background.withValues(alpha: 0),
+                        AppColors.background.withValues(alpha: 0.28),
+                        AppColors.background.withValues(alpha: 0.82),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  _NowPlayingBar(state: _mockState),
-                  const SizedBox(height: 10),
+                ),
+              ),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 6,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: _NowPlayingBar(state: _mockState),
+                  ),
+                  const SizedBox(height: 6),
                   _BottomNav(
                     items: _tabs,
                     selectedIndex: _selectedTab,
                     onSelected: (index) => setState(() => _selectedTab = index),
                   ),
                 ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSelectedTabBody() {
+    switch (_selectedTab) {
+      case 0:
+        return _HomeTabView(
+          state: _mockState,
+          pulse: _pulseController,
+        );
+      case 1:
+        return SearchPage(
+          targetBpm: _mockState.userCadence,
+          paceRange: _preferredSearchRange,
+          recentSessions: _mockState.jumpBackItems
+              .map(
+                (item) => SearchRecentSession(
+                  title: item.title,
+                  subtitle: item.subtitle,
+                  detail: item.detail,
+                  bpm: item.bpm,
+                ),
+              )
+              .toList(growable: false),
+        );
+      case 2:
+        return const _PlaceholderTabView(
+          title: 'Library',
+          message: 'Saved playlists and tracks will land here next.',
+        );
+      case 3:
+        return const _PlaceholderTabView(
+          title: 'Modes',
+          message: 'Walking, warm up, recovery, and run modes will live here.',
+        );
+      case 4:
+        return const _PlaceholderTabView(
+          title: 'Stats',
+          message: 'Your pacing trends and sync history will show up here.',
+        );
+      default:
+        return const SizedBox.shrink();
+    }
+  }
+}
+
+class _HomeTabView extends StatelessWidget {
+  const _HomeTabView({
+    required this.state,
+    required this.pulse,
+  });
+
+  final _HomeMockState state;
+  final Animation<double> pulse;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.only(bottom: 172),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _DailyStepsHero(
+            state: state,
+            pulse: pulse,
+          ),
+          const SizedBox(height: 18),
+          _StartSessionCard(state: state),
+          const SizedBox(height: 18),
+          const _SectionLabel(
+            title: 'Jump back in',
+            trailing: 'Last synced',
+          ),
+          const SizedBox(height: 12),
+          _JumpBackInRow(items: state.jumpBackItems),
+          const SizedBox(height: 18),
+          const _SectionLabel(
+            title: 'Playlist',
+            trailing: 'Spotify feel',
+          ),
+          const SizedBox(height: 12),
+          _PlaylistCard(state: state),
+        ],
+      ),
+    );
+  }
+}
+
+class _PlaceholderTabView extends StatelessWidget {
+  const _PlaceholderTabView({
+    required this.title,
+    required this.message,
+  });
+
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 28,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 15,
+                height: 1.45,
               ),
             ),
           ],
@@ -783,11 +928,15 @@ class _BottomNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(6, 10, 6, 4),
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: AppColors.border),
+        color: Colors.black.withValues(alpha: 0.34),
+        border: Border(
+          top: BorderSide(
+            color: Colors.white.withValues(alpha: 0.08),
+          ),
+        ),
       ),
       child: Row(
         children: [
@@ -798,24 +947,24 @@ class _BottomNav extends StatelessWidget {
                 onTap: () => onSelected(i),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 220),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(18),
-                    gradient: i == selectedIndex
-                        ? const LinearGradient(
-                            colors: [AppColors.primary, AppColors.primaryBright],
-                          )
-                        : null,
+                    color: i == selectedIndex
+                        ? Colors.white.withValues(alpha: 0.10)
+                        : Colors.transparent,
                   ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
                         items[i].icon,
-                        size: 20,
+                        size: 22,
                         color: i == selectedIndex
-                            ? AppColors.background
+                            ? AppColors.textPrimary
                             : AppColors.textSecondary,
                       ),
                       const SizedBox(height: 4),
@@ -823,10 +972,12 @@ class _BottomNav extends StatelessWidget {
                         items[i].label,
                         style: TextStyle(
                           color: i == selectedIndex
-                              ? AppColors.background
-                              : AppColors.textSecondary,
+                              ? AppColors.textPrimary
+                              : Colors.white.withValues(alpha: 0.76),
                           fontSize: 11,
-                          fontWeight: FontWeight.w700,
+                          fontWeight: i == selectedIndex
+                              ? FontWeight.w700
+                              : FontWeight.w600,
                         ),
                       ),
                     ],
@@ -834,7 +985,7 @@ class _BottomNav extends StatelessWidget {
                 ),
               ),
             ),
-            if (i != items.length - 1) const SizedBox(width: 4),
+            if (i != items.length - 1) const SizedBox(width: 2),
           ],
         ],
       ),
@@ -850,11 +1001,14 @@ class _NowPlayingBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFF1F2222),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.border),
+        color: Colors.black.withValues(alpha: 0.52),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.08),
+        ),
       ),
       child: Row(
         children: [
