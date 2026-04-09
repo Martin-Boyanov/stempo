@@ -1,6 +1,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:stempo/app/app_router.dart';
 import 'package:stempo/pages/home_page.dart';
 import 'package:stempo/ui/theme/app_theme.dart';
 
@@ -21,6 +22,11 @@ void main() {
 
   Future<void> openSearchTab(WidgetTester tester) async {
     await tester.tap(find.text('Search'));
+    await tester.pump(const Duration(milliseconds: 300));
+  }
+
+  Future<void> openLibraryTab(WidgetTester tester) async {
+    await tester.tap(find.text('Library'));
     await tester.pump(const Duration(milliseconds: 300));
   }
 
@@ -46,6 +52,66 @@ void main() {
 
     expect(find.text('Best pace-fit'), findsOneWidget);
     expect(find.text('Night Tempo Walk'), findsWidgets);
+  });
+
+  testWidgets('library tab shows the new tempo-first page', (tester) async {
+    await pumpHome(tester);
+    await openLibraryTab(tester);
+
+    expect(find.text('Your Library'), findsOneWidget);
+    expect(find.text('Tempo-ready playlists around 108 steps/min'), findsOneWidget);
+    expect(find.text('Pinned for your pace'), findsOneWidget);
+    expect(find.text('Start session'), findsOneWidget);
+  });
+
+  testWidgets('library filters refine the visible playlists', (tester) async {
+    await pumpHome(tester);
+    await openLibraryTab(tester);
+
+    expect(find.text('Steady Asphalt'), findsWidgets);
+    expect(find.text('Recovery Loop'), findsWidgets);
+
+    await tester.tap(find.text('Running'));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Steady Asphalt'), findsWidgets);
+    expect(find.text('After Hours Tempo'), findsWidgets);
+    expect(find.text('Recovery Loop'), findsNothing);
+  });
+
+  testWidgets('library cards expose bpm badges and fit labels', (tester) async {
+    await pumpHome(tester);
+    await openLibraryTab(tester);
+
+    expect(find.text('110 BPM'), findsWidgets);
+    expect(find.text('116 BPM'), findsWidgets);
+    expect(find.text('Perfect fit'), findsWidgets);
+    expect(find.text('Close'), findsWidgets);
+  });
+
+  testWidgets('tapping the mini-player opens the now playing page', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp.router(
+        theme: AppTheme.light,
+        routerConfig: AppRouter.router,
+      ),
+    );
+    AppRouter.router.go('/home');
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Seremise'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Now Playing'), findsOneWidget);
+    expect(find.text('Tempo match'), findsOneWidget);
+    expect(find.text('Start synced run'), findsOneWidget);
   });
 
   testWidgets('typing a query shows grouped hybrid search results', (tester) async {

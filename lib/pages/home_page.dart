@@ -1,7 +1,10 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
+import 'library_page.dart';
+import 'now_playing_page.dart';
 import 'search_page.dart';
 import '../ui/theme/colors.dart';
 
@@ -187,9 +190,8 @@ class _HomePageState extends State<HomePage>
               .toList(growable: false),
         );
       case 2:
-        return const _PlaceholderTabView(
-          title: 'Library',
-          message: 'Saved playlists and tracks will land here next.',
+        return LibraryPage(
+          userCadence: _mockState.userCadence,
         );
       case 3:
         return const _PlaceholderTabView(
@@ -1000,71 +1002,83 @@ class _NowPlayingBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.52),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.08),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => context.push(
+        '/now-playing',
+        extra: NowPlayingPageArgs(
+          trackTitle: state.trackTitle,
+          trackArtist: state.trackArtist,
+          trackBpm: state.trackBpm,
+          userCadence: state.userCadence,
         ),
       ),
-      child: Row(
-        children: [
-          Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [AppColors.accent, AppColors.primary],
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.52),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.08),
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppColors.accent, AppColors.primary],
+                ),
+              ),
+              child: const Icon(
+                Icons.play_arrow_rounded,
+                color: AppColors.background,
+                size: 28,
               ),
             ),
-            child: const Icon(
-              Icons.play_arrow_rounded,
-              color: AppColors.background,
-              size: 28,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  state.trackTitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    state.trackTitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  state.trackArtist,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
+                  const SizedBox(height: 4),
+                  Text(
+                    state.trackArtist,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          const SizedBox(width: 12),
-          const Icon(Icons.devices_rounded,
-              color: AppColors.textSecondary, size: 20),
-          const SizedBox(width: 12),
-          const Icon(Icons.favorite_border_rounded,
-              color: AppColors.textSecondary, size: 20),
-        ],
+            const SizedBox(width: 12),
+            const Icon(Icons.devices_rounded,
+                color: AppColors.textSecondary, size: 20),
+            const SizedBox(width: 12),
+            const Icon(Icons.favorite_border_rounded,
+                color: AppColors.textSecondary, size: 20),
+          ],
+        ),
       ),
     );
   }
