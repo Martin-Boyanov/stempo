@@ -190,7 +190,7 @@ class _OnboardingMotionState extends State<OnboardingMotion>
                             child: Column(
                               children: [
                                 const Text(
-                                  "LetвЂ™s",
+                                  "Let's",
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
                                     fontSize: 30,
@@ -242,7 +242,7 @@ class _OnboardingMotionState extends State<OnboardingMotion>
                             opacity: _animate ? 1 : 0,
                             duration: const Duration(milliseconds: 700),
                             child: const Text(
-                              "WeвЂ™ll use motion sensors to track your walking rhythm (steps per minute).",
+                              "We'll use motion sensors to track your walking rhythm (steps per minute).",
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 fontSize: 16,

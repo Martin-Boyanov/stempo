@@ -144,26 +144,34 @@ class _LibraryPageState extends State<LibraryPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _LibraryHeader(
-            userCadence: widget.userCadence,
-            profileName: widget.profileName,
-          ),
-          const SizedBox(height: 22),
-          SizedBox(
-            height: 42,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: LibraryFilter.values.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 10),
-              itemBuilder: (context, index) {
-                final filter = LibraryFilter.values[index];
-                final isSelected = filter == _selectedFilter;
-                return _LibraryFilterChip(
-                  label: filter.label,
-                  isSelected: isSelected,
-                  onTap: () => setState(() => _selectedFilter = filter),
-                );
-              },
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _LibraryHeader(
+                  userCadence: widget.userCadence,
+                  profileName: widget.profileName,
+                ),
+                const SizedBox(height: 22),
+                SizedBox(
+                  height: 42,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: LibraryFilter.values.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 10),
+                    itemBuilder: (context, index) {
+                      final filter = LibraryFilter.values[index];
+                      final isSelected = filter == _selectedFilter;
+                      return _LibraryFilterChip(
+                        label: filter.label,
+                        isSelected: isSelected,
+                        onTap: () => setState(() => _selectedFilter = filter),
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 22),
@@ -175,89 +183,100 @@ class _LibraryPageState extends State<LibraryPage> {
               onTap: () => _openPlaylist(hero),
             ),
             const SizedBox(height: 22),
-            const _LibrarySectionLabel(
-              title: 'Playlists',
-              trailing: 'Tempo-ready',
-            ),
-            const SizedBox(height: 12),
-            if (_mainPlaylists.isEmpty)
-              _LibraryEmptyState(
-                title: 'No playlists in this view yet',
-                message:
-                    'Connect Spotify playlists to build your tempo library.',
-              )
-            else
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final isWide = constraints.maxWidth >= 760;
-                  if (!isWide) {
-                    return Column(
-                      children: [
-                        for (var i = 0; i < _mainPlaylists.length; i++) ...[
-                          _LibraryPlaylistCard(
-                            playlist: _mainPlaylists[i],
-                            fitLabel: _fitLabel(_mainPlaylists[i]),
-                            fitColor: _fitColor(_mainPlaylists[i]),
-                            onTap: () => _openPlaylist(_mainPlaylists[i]),
-                          ),
-                          if (i != _mainPlaylists.length - 1)
-                            const SizedBox(height: 12),
-                        ],
-                      ],
-                    );
-                  }
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const _LibrarySectionLabel(
+                    title: 'Playlists',
+                    trailing: 'Tempo-ready',
+                  ),
+                  const SizedBox(height: 12),
+                  if (_mainPlaylists.isEmpty)
+                    const _LibraryEmptyState(
+                      title: 'No playlists in this view yet',
+                      message:
+                          'Connect Spotify playlists to build your tempo library.',
+                    )
+                  else
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final isWide = constraints.maxWidth >= 760;
+                        if (!isWide) {
+                          return Column(
+                            children: [
+                              for (var i = 0; i < _mainPlaylists.length; i++) ...[
+                                _LibraryPlaylistCard(
+                                  playlist: _mainPlaylists[i],
+                                  fitLabel: _fitLabel(_mainPlaylists[i]),
+                                  fitColor: _fitColor(_mainPlaylists[i]),
+                                  onTap: () => _openPlaylist(_mainPlaylists[i]),
+                                ),
+                                if (i != _mainPlaylists.length - 1)
+                                  const SizedBox(height: 12),
+                              ],
+                            ],
+                          );
+                        }
 
-                  return Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
-                    children: [
-                      for (final playlist in _mainPlaylists)
-                        SizedBox(
-                          width: (constraints.maxWidth - 12) / 2,
-                          child: _LibraryPlaylistCard(
+                        return Wrap(
+                          spacing: 12,
+                          runSpacing: 12,
+                          children: [
+                            for (final playlist in _mainPlaylists)
+                              SizedBox(
+                                width: (constraints.maxWidth - 12) / 2,
+                                child: _LibraryPlaylistCard(
+                                  playlist: playlist,
+                                  fitLabel: _fitLabel(playlist),
+                                  fitColor: _fitColor(playlist),
+                                  onTap: () => _openPlaylist(playlist),
+                                ),
+                              ),
+                          ],
+                        );
+                      },
+                    ),
+                  const SizedBox(height: 22),
+                  const _LibrarySectionLabel(
+                    title: 'Recently played',
+                    trailing: 'Jump back in',
+                  ),
+                  const SizedBox(height: 12),
+                  if (_recentlyPlayed.isEmpty)
+                    const _LibraryEmptyState(
+                      title: 'Nothing played recently',
+                      message:
+                          'Start a session from a playlist and it will show up here.',
+                    )
+                  else
+                    SizedBox(
+                      height: 152,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _recentlyPlayed.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 12),
+                        itemBuilder: (context, index) {
+                          final playlist = _recentlyPlayed[index];
+                          return _LibraryRecentCard(
                             playlist: playlist,
                             fitLabel: _fitLabel(playlist),
-                            fitColor: _fitColor(playlist),
                             onTap: () => _openPlaylist(playlist),
-                          ),
-                        ),
-                    ],
-                  );
-                },
+                          );
+                        },
+                      ),
+                    ),
+                ],
               ),
-            const SizedBox(height: 22),
-            const _LibrarySectionLabel(
-              title: 'Recently played',
-              trailing: 'Jump back in',
             ),
-            const SizedBox(height: 12),
-            if (_recentlyPlayed.isEmpty)
-              const _LibraryEmptyState(
-                title: 'Nothing played recently',
-                message:
-                    'Start a session from a playlist and it will show up here.',
-              )
-            else
-              SizedBox(
-                height: 152,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: _recentlyPlayed.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 12),
-                  itemBuilder: (context, index) {
-                    final playlist = _recentlyPlayed[index];
-                    return _LibraryRecentCard(
-                      playlist: playlist,
-                      fitLabel: _fitLabel(playlist),
-                      onTap: () => _openPlaylist(playlist),
-                    );
-                  },
-                ),
-              ),
           ] else
-            const _LibraryEmptyState(
-              title: 'Your library is waiting',
-              message: 'Connect Spotify playlists to build your tempo library.',
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 20),
+              child: _LibraryEmptyState(
+                title: 'Your library is waiting',
+                message: 'Connect Spotify playlists to build your tempo library.',
+              ),
             ),
         ],
       ),

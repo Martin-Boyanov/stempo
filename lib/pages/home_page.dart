@@ -198,14 +198,11 @@ class _HomePageState extends State<HomePage>
                 child: SizedBox.expand(),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 220),
-                child: KeyedSubtree(
-                  key: ValueKey(_selectedTab),
-                  child: _buildSelectedTabBody(),
-                ),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 220),
+              child: KeyedSubtree(
+                key: ValueKey(_selectedTab),
+                child: _buildSelectedTabBody(),
               ),
             ),
             Positioned(
@@ -344,10 +341,12 @@ class _HomeTabView extends StatelessWidget {
   Widget build(BuildContext context) {
     return SingleChildScrollView(
       padding: const EdgeInsets.only(bottom: 172),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _DailyStepsHero(state: state, pulse: pulse),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _DailyStepsHero(state: state, pulse: pulse),
           const SizedBox(height: 14),
           const _SectionLabel(title: 'Recents', trailing: 'Jump back in'),
           const SizedBox(height: 12),
@@ -372,6 +371,7 @@ class _HomeTabView extends StatelessWidget {
           ),
         ],
       ),
+    ),
     );
   }
 }
@@ -470,9 +470,11 @@ class _StatsSummaryScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return SingleChildScrollView(
       padding: const EdgeInsets.only(bottom: 172),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
           _StatsHeader(snapshot: snapshot),
           const SizedBox(height: 14),
           Row(
@@ -578,6 +580,7 @@ class _StatsSummaryScreen extends StatelessWidget {
           ),
         ],
       ),
+    ),
     );
   }
 }
@@ -671,7 +674,7 @@ class _StatsIntroScreen extends StatelessWidget {
       duration: const Duration(milliseconds: 220),
       opacity: isActive ? 1 : 0.96,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(0, 8, 0, 188),
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 188),
         child: FrostedPanel(
           radius: 34,
           padding: const EdgeInsets.fromLTRB(28, 24, 28, 24),
@@ -2251,12 +2254,16 @@ class _ActionPillButton extends StatelessWidget {
               color: filled ? AppColors.background : AppColors.textPrimary,
             ),
             const SizedBox(width: 8),
-            Text(
-              label,
-              style: TextStyle(
-                color: filled ? AppColors.background : AppColors.textPrimary,
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: filled ? AppColors.background : AppColors.textPrimary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
           ],

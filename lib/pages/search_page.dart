@@ -737,10 +737,12 @@ class _SearchPageState extends State<SearchPage> {
 
     return SingleChildScrollView(
       padding: const EdgeInsets.only(bottom: 172),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildSearchBar(),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildSearchBar(),
           const SizedBox(height: 20),
           if (_showingResults)
             _buildResultsView(
@@ -755,6 +757,7 @@ class _SearchPageState extends State<SearchPage> {
             _buildBrowseView(filteredItems),
         ],
       ),
+    ),
     );
   }
 

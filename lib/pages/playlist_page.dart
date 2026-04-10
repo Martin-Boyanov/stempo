@@ -62,16 +62,20 @@ class _PlaylistPageState extends State<PlaylistPage> {
         spotifyUri,
       );
       if (!remotePlayed) {
-        final nativeUri = Uri.parse(_nativeUriFromSpotifyUri(spotifyUri));
-        final webUri = Uri.parse(_webUrlFromSpotifyUri(spotifyUri));
-        final openedNative = await launchUrl(
-          nativeUri,
+        // Fallback: open in Spotify app or web browser
+        final webUrl = _webUrlFromSpotifyUri(spotifyUri);
+        final webUri = Uri.parse(webUrl);
+        await launchUrl(webUri, mode: LaunchMode.externalApplication);
+      }
+    } catch (e) {
+      // Last resort: try web URL
+      try {
+        final webUrl = _webUrlFromSpotifyUri(spotifyUri);
+        await launchUrl(
+          Uri.parse(webUrl),
           mode: LaunchMode.externalApplication,
         );
-        if (!openedNative) {
-          await launchUrl(webUri, mode: LaunchMode.externalApplication);
-        }
-      }
+      } catch (_) {}
     } finally {
       if (mounted) {
         setState(() => _isLaunching = false);
@@ -84,16 +88,18 @@ class _PlaylistPageState extends State<PlaylistPage> {
   }
 
   Future<void> _startSession(List<SpotifyTrack> tracks) async {
-    final firstTrack = tracks.isNotEmpty ? tracks.first : null;
-    if (firstTrack != null) {
-      await _openSpotifyUri(firstTrack.spotifyUri);
-    } else if (widget.args.playlist.spotifyUri != null) {
-      await _openSpotifyUri(widget.args.playlist.spotifyUri!);
+    // Play the PLAYLIST context so all tracks play in order within the playlist
+    final playlistUri = widget.args.playlist.spotifyUri;
+    if (playlistUri != null && playlistUri.isNotEmpty) {
+      await _openSpotifyUri(playlistUri);
+    } else if (tracks.isNotEmpty) {
+      // Fallback to the first track if no playlist URI is available
+      await _openSpotifyUri(tracks.first.spotifyUri);
     }
 
     if (!mounted) return;
 
-    final displayTrack = firstTrack;
+    final displayTrack = tracks.isNotEmpty ? tracks.first : null;
     context.push(
       '/now-playing',
       extra: NowPlayingPageArgs(
@@ -107,8 +113,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
                 : widget.args.playlist.imageAsset,
         trackBpm: displayTrack?.bpm ?? widget.args.playlist.bpm,
         userCadence: widget.args.userCadence,
-        spotifyUri:
-            displayTrack?.spotifyUri ?? widget.args.playlist.spotifyUri,
+        spotifyUri: playlistUri ?? displayTrack?.spotifyUri,
       ),
     );
   }
@@ -592,9 +597,6 @@ class _ActionButton extends StatelessWidget {
   }
 }
 
-String _nativeUriFromSpotifyUri(String spotifyUri) {
-  return spotifyUri.replaceFirst('spotify:', 'spotify://');
-}
 
 String _webUrlFromSpotifyUri(String spotifyUri) {
   final segments = spotifyUri.split(':');
