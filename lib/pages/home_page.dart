@@ -58,13 +58,12 @@ class _HomePageState extends State<HomePage>
 
   int get _syncGap => (_mockState.trackBpm - _userCadence).abs();
 
-  _StatsSnapshot get _statsSnapshot =>
-      _buildStatsSnapshot(
-        playlists: AuthScope.read(context).playlists.isEmpty
-            ? mockTempoPlaylists
-            : AuthScope.read(context).playlists,
-        userCadence: _userCadence,
-      );
+  _StatsSnapshot get _statsSnapshot => _buildStatsSnapshot(
+    playlists: AuthScope.read(context).playlists.isEmpty
+        ? mockTempoPlaylists
+        : AuthScope.read(context).playlists,
+    userCadence: _userCadence,
+  );
 
   void _openPlaylist(TempoPlaylist playlist) {
     context.push(
@@ -182,7 +181,9 @@ class _HomePageState extends State<HomePage>
   @override
   Widget build(BuildContext context) {
     final auth = AuthScope.watch(context);
-    final playlists = auth.playlists.isEmpty ? mockTempoPlaylists : auth.playlists;
+    final playlists = auth.playlists.isEmpty
+        ? mockTempoPlaylists
+        : auth.playlists;
     final currentTrack = playlists.isNotEmpty ? playlists.first : null;
 
     return Scaffold(
@@ -262,7 +263,9 @@ class _HomePageState extends State<HomePage>
 
   Widget _buildSelectedTabBody() {
     final auth = AuthScope.watch(context);
-    final playlists = auth.playlists.isEmpty ? mockTempoPlaylists : auth.playlists;
+    final playlists = auth.playlists.isEmpty
+        ? mockTempoPlaylists
+        : auth.playlists;
 
     switch (_selectedTab) {
       case 0:
@@ -449,9 +452,7 @@ class _StatsTabViewState extends State<_StatsTabView> {
             child: AnimatedOpacity(
               duration: const Duration(milliseconds: 220),
               opacity: _pageIndex == 3 ? 0 : 1,
-              child: Center(
-                child: _StatsPagerDots(activeIndex: _pageIndex),
-              ),
+              child: Center(child: _StatsPagerDots(activeIndex: _pageIndex)),
             ),
           ),
         ),
@@ -635,9 +636,18 @@ class _StatsHeader extends StatelessWidget {
             spacing: 10,
             runSpacing: 10,
             children: [
-              _HeaderPill(label: snapshot.favoriteRangeLabel, accent: AppColors.primaryBright),
-              _HeaderPill(label: snapshot.topPlaylistTitle, accent: AppColors.accent),
-              _HeaderPill(label: '${snapshot.walkShare}% walk', accent: AppColors.cinemaRed),
+              _HeaderPill(
+                label: snapshot.favoriteRangeLabel,
+                accent: AppColors.primaryBright,
+              ),
+              _HeaderPill(
+                label: snapshot.topPlaylistTitle,
+                accent: AppColors.accent,
+              ),
+              _HeaderPill(
+                label: '${snapshot.walkShare}% walk',
+                accent: AppColors.cinemaRed,
+              ),
             ],
           ),
         ],
@@ -674,82 +684,83 @@ class _StatsIntroScreen extends StatelessWidget {
           ),
           child: Column(
             children: [
-            const SizedBox(height: 4),
-            Container(
-              width: 102,
-              height: 102,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    AppColors.primaryBright.withValues(alpha: 0.72),
-                    AppColors.primary.withValues(alpha: 0.24),
-                    Colors.transparent,
-                  ],
-                ),
-              ),
-              child: Center(
-                child: Container(
-                  width: 62,
-                  height: 62,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppColors.background.withValues(alpha: 0.76),
-                  ),
-                  child: const Icon(
-                    Icons.insights_rounded,
-                    size: 30,
-                    color: AppColors.textPrimary,
+              const SizedBox(height: 4),
+              Container(
+                width: 102,
+                height: 102,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: [
+                      AppColors.primaryBright.withValues(alpha: 0.72),
+                      AppColors.primary.withValues(alpha: 0.24),
+                      Colors.transparent,
+                    ],
                   ),
                 ),
-              ),
-            ),
-            const Spacer(),
-            const Text(
-              'Your month in motion',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 36,
-                height: 0.96,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              '${snapshot.averageBpm} BPM average | ${snapshot.syncScore}% sync | ${snapshot.topPlaylistTitle}',
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 14,
-                height: 1.35,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 18),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              alignment: WrapAlignment.center,
-              children: [
-                _HeaderPill(
-                  label: snapshot.favoriteRangeLabel,
-                  accent: AppColors.primaryBright,
+                child: Center(
+                  child: Container(
+                    width: 62,
+                    height: 62,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: AppColors.background.withValues(alpha: 0.76),
+                    ),
+                    child: const Icon(
+                      Icons.insights_rounded,
+                      size: 30,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
                 ),
-                _HeaderPill(
-                  label: '${snapshot.walkShare}% walk / ${snapshot.runShare}% run',
-                  accent: AppColors.cinemaRed,
+              ),
+              const Spacer(),
+              const Text(
+                'Your month in motion',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 36,
+                  height: 0.96,
+                  fontWeight: FontWeight.w800,
                 ),
-              ],
-            ),
-            const Spacer(),
-            _StoryCtaButton(
-              label: 'Start exploring',
-              icon: Icons.arrow_forward_rounded,
-              onTap: onNext,
-            ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '${snapshot.averageBpm} BPM average | ${snapshot.syncScore}% sync | ${snapshot.topPlaylistTitle}',
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 14,
+                  height: 1.35,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 18),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                alignment: WrapAlignment.center,
+                children: [
+                  _HeaderPill(
+                    label: snapshot.favoriteRangeLabel,
+                    accent: AppColors.primaryBright,
+                  ),
+                  _HeaderPill(
+                    label:
+                        '${snapshot.walkShare}% walk / ${snapshot.runShare}% run',
+                    accent: AppColors.cinemaRed,
+                  ),
+                ],
+              ),
+              const Spacer(),
+              _StoryCtaButton(
+                label: 'Start exploring',
+                icon: Icons.arrow_forward_rounded,
+                onTap: onNext,
+              ),
             ],
           ),
         ),
@@ -757,6 +768,7 @@ class _StatsIntroScreen extends StatelessWidget {
     );
   }
 }
+
 class _StatsFeatureScreen extends StatelessWidget {
   const _StatsFeatureScreen({
     required this.snapshot,
@@ -856,9 +868,15 @@ class _StatsFeatureScreen extends StatelessWidget {
                                         alignment: Alignment.bottomCenter,
                                         child: Container(
                                           width: double.infinity,
-                                          height: (((chartValues[i] / maxValue) * 92).clamp(26, 92) * progress),
+                                          height:
+                                              (((chartValues[i] / maxValue) *
+                                                      92)
+                                                  .clamp(26, 92) *
+                                              progress),
                                           decoration: BoxDecoration(
-                                            borderRadius: BorderRadius.circular(999),
+                                            borderRadius: BorderRadius.circular(
+                                              999,
+                                            ),
                                             color: accent,
                                             boxShadow: AppFx.softGlow(
                                               accent,
@@ -880,7 +898,8 @@ class _StatsFeatureScreen extends StatelessWidget {
                                   ],
                                 ),
                               ),
-                              if (i != chartValues.length - 1) const SizedBox(width: 12),
+                              if (i != chartValues.length - 1)
+                                const SizedBox(width: 12),
                             ],
                           ],
                         ),
@@ -938,6 +957,7 @@ class _StatsFeatureScreen extends StatelessWidget {
     );
   }
 }
+
 class _StatsSplitStoryScreen extends StatelessWidget {
   const _StatsSplitStoryScreen({
     required this.snapshot,
@@ -1069,6 +1089,7 @@ class _StatsSplitStoryScreen extends StatelessWidget {
     );
   }
 }
+
 class _StatsPagerDots extends StatelessWidget {
   const _StatsPagerDots({required this.activeIndex});
 
@@ -1227,7 +1248,9 @@ class _StatsHeroCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final maxValue = chartValues.isEmpty ? 1 : chartValues.reduce(math.max).toDouble();
+    final maxValue = chartValues.isEmpty
+        ? 1
+        : chartValues.reduce(math.max).toDouble();
 
     return FrostedPanel(
       padding: const EdgeInsets.all(18),
@@ -1267,7 +1290,10 @@ class _StatsHeroCard extends StatelessWidget {
                       child: Align(
                         alignment: Alignment.bottomCenter,
                         child: Container(
-                          height: ((chartValues[i] / maxValue) * 44).clamp(10, 44),
+                          height: ((chartValues[i] / maxValue) * 44).clamp(
+                            10,
+                            44,
+                          ),
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(999),
                             gradient: LinearGradient(
@@ -1487,7 +1513,8 @@ class _StatsTrendCard extends StatelessWidget {
               maxValue: maxZone,
               accent: i == 1 ? AppColors.primaryBright : AppColors.cinemaRed,
             ),
-            if (i != snapshot.bpmZoneLabels.length - 1) const SizedBox(height: 10),
+            if (i != snapshot.bpmZoneLabels.length - 1)
+              const SizedBox(height: 10),
           ],
           const SizedBox(height: 20),
           Row(
@@ -1775,10 +1802,7 @@ class _HorizontalShareBar extends StatelessWidget {
                     gradient: LinearGradient(
                       begin: Alignment.centerLeft,
                       end: Alignment.centerRight,
-                      colors: [
-                        accent,
-                        accent.withValues(alpha: 0.36),
-                      ],
+                      colors: [accent, accent.withValues(alpha: 0.36)],
                     ),
                   ),
                 ),
@@ -1950,103 +1974,134 @@ class _DailyStepsHero extends StatelessWidget {
   Widget build(BuildContext context) {
     final progress = (state.stepsDone / state.goalSteps).clamp(0.0, 1.0);
     final percent = (progress * 100).round();
+    final progressRing = SizedBox(
+      width: 150,
+      height: 150,
+      child: AnimatedBuilder(
+        animation: pulse,
+        builder: (context, _) {
+          return CustomPaint(
+            painter: _ProgressRingPainter(
+              progress: progress,
+              pulse: pulse.value,
+            ),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '$percent%',
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 32,
+                      height: 1,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'done',
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+
+    Widget stepsSummary({required bool isCompact}) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Daily steps',
+            style: Theme.of(context).textTheme.bodySmall!.copyWith(
+              color: AppColors.textSecondary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 10),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              _formatSteps(state.stepsDone),
+              maxLines: 1,
+              softWrap: false,
+              style: TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: isCompact ? 36 : 40,
+                height: 0.92,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              _formatSteps(state.goalSteps),
+              maxLines: 1,
+              softWrap: false,
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: isCompact ? 24 : 26,
+                height: 1,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          _MetricRow(
+            label: 'Remaining',
+            value: _formatSteps(state.goalSteps - state.stepsDone),
+            accent: AppColors.primaryBright,
+          ),
+          const SizedBox(height: 12),
+          const _MetricRow(
+            label: 'Goal',
+            value: '10,000',
+            accent: AppColors.accent,
+          ),
+        ],
+      );
+    }
 
     return FrostedPanel(
       padding: const EdgeInsets.all(24),
       radius: 32,
       glowColor: AppColors.primary,
       elevated: true,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          SizedBox(
-            width: 150,
-            height: 150,
-            child: AnimatedBuilder(
-              animation: pulse,
-              builder: (context, _) {
-                return CustomPaint(
-                  painter: _ProgressRingPainter(
-                    progress: progress,
-                    pulse: pulse.value,
-                  ),
-                  child: Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          '$percent%',
-                          style: const TextStyle(
-                            color: AppColors.textPrimary,
-                            fontSize: 32,
-                            height: 1,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        const Text(
-                          'done',
-                          style: TextStyle(
-                            color: AppColors.textSecondary,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-          const SizedBox(width: 20),
-          Expanded(
-            child: Column(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isCompact = constraints.maxWidth < 320;
+          if (isCompact) {
+            return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Daily steps',
-                  style: Theme.of(context).textTheme.bodySmall!.copyWith(
-                    color: AppColors.textSecondary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  _formatSteps(state.stepsDone),
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 40,
-                    height: 0.92,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  _formatSteps(state.goalSteps),
-                  style: const TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 26,
-                    height: 1,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                _MetricRow(
-                  label: 'Remaining',
-                  value: _formatSteps(state.goalSteps - state.stepsDone),
-                  accent: AppColors.primaryBright,
-                ),
-                const SizedBox(height: 12),
-                const _MetricRow(
-                  label: 'Goal',
-                  value: '10,000',
-                  accent: AppColors.accent,
-                ),
+                Center(child: progressRing),
+                const SizedBox(height: 20),
+                stepsSummary(isCompact: true),
               ],
-            ),
-          ),
-        ],
+            );
+          }
+
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              progressRing,
+              const SizedBox(width: 20),
+              Expanded(child: stepsSummary(isCompact: false)),
+            ],
+          );
+        },
       ),
     );
   }
@@ -2432,12 +2487,20 @@ class _MetricRow extends StatelessWidget {
             ),
           ),
         ),
-        Text(
-          value,
-          style: const TextStyle(
-            color: AppColors.textPrimary,
-            fontSize: 14,
-            fontWeight: FontWeight.w700,
+        Flexible(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerRight,
+            child: Text(
+              value,
+              maxLines: 1,
+              softWrap: false,
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
           ),
         ),
       ],
@@ -2833,11 +2896,14 @@ _StatsSnapshot _buildStatsSnapshot({
   required List<TempoPlaylist> playlists,
   required int userCadence,
 }) {
-  final recent = playlists.where((playlist) => playlist.wasRecentlyPlayed).toList();
+  final recent = playlists
+      .where((playlist) => playlist.wasRecentlyPlayed)
+      .toList();
   final source = recent.isEmpty ? playlists : recent;
 
   final averageBpm =
-      (source.fold<int>(0, (sum, playlist) => sum + playlist.bpm) / source.length)
+      (source.fold<int>(0, (sum, playlist) => sum + playlist.bpm) /
+              source.length)
           .round();
   final favoriteStart = ((averageBpm - 4) ~/ 2) * 2;
   final favoriteEnd = favoriteStart + 8;
@@ -2847,15 +2913,20 @@ _StatsSnapshot _buildStatsSnapshot({
           .round();
   final syncScoreRaw =
       (source
-                  .map((playlist) => 100 - ((playlist.bpm - userCadence).abs() * 6))
+                  .map(
+                    (playlist) =>
+                        100 - ((playlist.bpm - userCadence).abs() * 6),
+                  )
                   .reduce((a, b) => a + b) /
               source.length)
           .round();
   final syncScore = syncScoreRaw.clamp(52, 98);
 
   final topPlaylist = source.reduce((a, b) {
-    final aScore = (a.trackCount * 2) + a.durationMinutes + (a.isPinned ? 12 : 0);
-    final bScore = (b.trackCount * 2) + b.durationMinutes + (b.isPinned ? 12 : 0);
+    final aScore =
+        (a.trackCount * 2) + a.durationMinutes + (a.isPinned ? 12 : 0);
+    final bScore =
+        (b.trackCount * 2) + b.durationMinutes + (b.isPinned ? 12 : 0);
     return aScore >= bScore ? a : b;
   });
 
@@ -2867,17 +2938,20 @@ _StatsSnapshot _buildStatsSnapshot({
     (a, b) => a.value >= b.value ? a : b,
   );
 
-  final walkCount =
-      source.where((playlist) => playlist.category.toLowerCase() == 'walking').length;
-  final runCount =
-      source.where((playlist) => playlist.category.toLowerCase() == 'running').length;
+  final walkCount = source
+      .where((playlist) => playlist.category.toLowerCase() == 'walking')
+      .length;
+  final runCount = source
+      .where((playlist) => playlist.category.toLowerCase() == 'running')
+      .length;
   final totalSessions = math.max(1, walkCount + runCount);
   final walkShare = ((walkCount / totalSessions) * 100).round();
   final runShare = 100 - walkShare;
 
   final recoveryZone = source.where((playlist) => playlist.bpm < 104).length;
-  final cruiseZone =
-      source.where((playlist) => playlist.bpm >= 104 && playlist.bpm <= 114).length;
+  final cruiseZone = source
+      .where((playlist) => playlist.bpm >= 104 && playlist.bpm <= 114)
+      .length;
   final pushZone = source.where((playlist) => playlist.bpm > 114).length;
 
   final weeklyBpmTrend = [
@@ -2889,8 +2963,8 @@ _StatsSnapshot _buildStatsSnapshot({
 
   final monthlySteps = 8420 * 24;
   final monthlyGoal = 10000 * 30;
-  final monthlyStepProgress =
-      (((monthlySteps / monthlyGoal) * 100).round()).clamp(0, 100);
+  final monthlyStepProgress = (((monthlySteps / monthlyGoal) * 100).round())
+      .clamp(0, 100);
 
   return _StatsSnapshot(
     averageBpm: averageBpm,
@@ -2936,7 +3010,8 @@ _StatsSnapshot _buildStatsSnapshot({
       _StatsFact(
         title: 'Fastest energy',
         value: '${source.map((playlist) => playlist.bpm).reduce(math.max)} BPM',
-        caption: 'You reach for higher-BPM tracks most on your run-leaning days.',
+        caption:
+            'You reach for higher-BPM tracks most on your run-leaning days.',
         accent: AppColors.cinemaRed,
         icon: Icons.local_fire_department_rounded,
       ),
@@ -2958,7 +3033,8 @@ _StatsSnapshot _buildStatsSnapshot({
       _StatsFact(
         title: 'Dominant mood',
         value: topMoodEntry.key,
-        caption: 'That mood anchors most of your last-30-day listening sessions.',
+        caption:
+            'That mood anchors most of your last-30-day listening sessions.',
         accent: AppColors.primaryBright,
         icon: Icons.auto_awesome_rounded,
       ),
@@ -3117,4 +3193,3 @@ String _formatSteps(int value) {
 
   return buffer.toString();
 }
-

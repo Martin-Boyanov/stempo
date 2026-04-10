@@ -5,6 +5,8 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val spotifyAppRemoteAar = file("../spotify-android-sdk/app-remote-lib/spotify-app-remote-release-0.8.0.aar")
+
 android {
     namespace = "com.example.stempo"
     compileSdk = flutter.compileSdkVersion
@@ -40,7 +42,9 @@ android {
 }
 
 dependencies {
-    implementation(files("../spotify-android-sdk/app-remote-lib/spotify-app-remote-release-0.8.0.aar"))
+    if (spotifyAppRemoteAar.exists()) {
+        implementation(files(spotifyAppRemoteAar))
+    }
     implementation("com.google.code.gson:gson:2.8.9")
 }
 

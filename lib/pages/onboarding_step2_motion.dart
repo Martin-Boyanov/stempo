@@ -69,7 +69,6 @@ class _OnboardingMotionState extends State<OnboardingMotion>
       ),
     ]).animate(bounceController);
 
-
     rippleController =
         AnimationController(
           vsync: this,
@@ -158,118 +157,132 @@ class _OnboardingMotionState extends State<OnboardingMotion>
         duration: const Duration(milliseconds: 700),
         builder: (context, value, child) =>
             Opacity(opacity: value, child: child),
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: CustomPaint(
-                key: _paintKey,
-                painter: AnimatedRipplePainter(
-                  t: rippleT,
-                  opacity: rippleOpacity,
-                  center: _syncCenter,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return Stack(
+              children: [
+                Positioned.fill(
+                  child: CustomPaint(
+                    key: _paintKey,
+                    painter: AnimatedRipplePainter(
+                      t: rippleT,
+                      opacity: rippleOpacity,
+                      center: _syncCenter,
+                    ),
+                  ),
                 ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  AnimatedSlide(
-                    offset: _animate ? Offset.zero : const Offset(0, 0.2),
-                    duration: const Duration(milliseconds: 600),
-                    curve: Curves.easeOutCubic,
-                    child: AnimatedOpacity(
-                      duration: const Duration(milliseconds: 600),
-                      opacity: _animate ? 1 : 0,
-                      child: Column(
-                        children: [
-                          const Text(
-                            "Let’s",
-                            style: TextStyle(
-                              fontSize: 30,
-                              fontWeight: FontWeight.w400,
-                              letterSpacing: 0.2,
-                              color: Colors.white,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          AnimatedBuilder(
-                            animation: bounceController,
-                            builder: (_, __) {
-                              return Transform.scale(
-                                scale: bounceScale.value,
-                                child: Text(
-                                  "sync",
-                                  key: _syncKey,
-                                  style: const TextStyle(
-                                    fontSize: 40,
-                                    fontWeight: FontWeight.w500,
+                SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight - 48,
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        AnimatedSlide(
+                          offset: _animate ? Offset.zero : const Offset(0, 0.2),
+                          duration: const Duration(milliseconds: 600),
+                          curve: Curves.easeOutCubic,
+                          child: AnimatedOpacity(
+                            duration: const Duration(milliseconds: 600),
+                            opacity: _animate ? 1 : 0,
+                            child: Column(
+                              children: [
+                                const Text(
+                                  "LetвЂ™s",
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 30,
+                                    fontWeight: FontWeight.w400,
                                     letterSpacing: 0.2,
                                     color: Colors.white,
                                   ),
                                 ),
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 6),
-                          const Text(
-                            "your steps.",
-                            style: TextStyle(
-                              fontSize: 30,
-                              fontWeight: FontWeight.w400,
-                              letterSpacing: 0.2,
-                              color: Colors.white,
+                                const SizedBox(height: 6),
+                                AnimatedBuilder(
+                                  animation: bounceController,
+                                  builder: (_, __) {
+                                    return Transform.scale(
+                                      scale: bounceScale.value,
+                                      child: Text(
+                                        "sync",
+                                        key: _syncKey,
+                                        style: const TextStyle(
+                                          fontSize: 40,
+                                          fontWeight: FontWeight.w500,
+                                          letterSpacing: 0.2,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                                const SizedBox(height: 6),
+                                const Text(
+                                  "your steps.",
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 30,
+                                    fontWeight: FontWeight.w400,
+                                    letterSpacing: 0.2,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                        ],
-                      ),
+                        ),
+                        const SizedBox(height: 24),
+                        AnimatedSlide(
+                          offset: _animate ? Offset.zero : const Offset(0, 0.3),
+                          duration: const Duration(milliseconds: 700),
+                          curve: Curves.easeOutCubic,
+                          child: AnimatedOpacity(
+                            opacity: _animate ? 1 : 0,
+                            duration: const Duration(milliseconds: 700),
+                            child: const Text(
+                              "WeвЂ™ll use motion sensors to track your walking rhythm (steps per minute).",
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.white70,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 40),
+                        TweenAnimationBuilder<double>(
+                          tween: Tween(begin: 0.8, end: _animate ? 1 : 0.8),
+                          duration: const Duration(milliseconds: 500),
+                          curve: Curves.easeOutBack,
+                          builder: (_, scale, child) =>
+                              Transform.scale(scale: scale, child: child),
+                          child: PrimaryButton(
+                            text: "Allow Motion Access",
+                            onPressed: () => context.push('/pace'),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        TweenAnimationBuilder<double>(
+                          tween: Tween(begin: 0.8, end: _animate ? 1 : 0.8),
+                          duration: const Duration(milliseconds: 550),
+                          curve: Curves.easeOutBack,
+                          builder: (_, scale, child) =>
+                              Transform.scale(scale: scale, child: child),
+                          child: PrimaryButton(
+                            text: "Skip for now",
+                            color: const Color(0xFF3A3A3A),
+                            onPressed: () => context.push('/pace'),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 24),
-                  AnimatedSlide(
-                    offset: _animate ? Offset.zero : const Offset(0, 0.3),
-                    duration: const Duration(milliseconds: 700),
-                    curve: Curves.easeOutCubic,
-                    child: AnimatedOpacity(
-                      opacity: _animate ? 1 : 0,
-                      duration: const Duration(milliseconds: 700),
-                      child: const Text(
-                        "We’ll use motion sensors to track your walking rhythm (steps per minute).",
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 16, color: Colors.white70),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 40),
-                  TweenAnimationBuilder<double>(
-                    tween: Tween(begin: 0.8, end: _animate ? 1 : 0.8),
-                    duration: const Duration(milliseconds: 500),
-                    curve: Curves.easeOutBack,
-                    builder: (_, scale, child) =>
-                        Transform.scale(scale: scale, child: child),
-                    child: PrimaryButton(
-                      text: "Allow Motion Access",
-                      onPressed: () => context.push('/pace'),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  TweenAnimationBuilder<double>(
-                    tween: Tween(begin: 0.8, end: _animate ? 1 : 0.8),
-                    duration: const Duration(milliseconds: 550),
-                    curve: Curves.easeOutBack,
-                    builder: (_, scale, child) =>
-                        Transform.scale(scale: scale, child: child),
-                    child: PrimaryButton(
-                      text: "Skip for now",
-                      color: const Color(0xFF3A3A3A),
-                      onPressed: () => context.push('/pace'),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -324,7 +337,6 @@ class AnimatedRipplePainter extends CustomPainter {
 
     canvas.drawCircle(center, radius, fog);
     canvas.drawCircle(center, radius, crisp);
-
   }
 
   @override
