@@ -39,6 +39,11 @@ android {
     }
 }
 
+dependencies {
+    implementation(files("../spotify-android-sdk/app-remote-lib/spotify-app-remote-release-0.8.0.aar"))
+    implementation("com.google.code.gson:gson:2.8.9")
+}
+
 flutter {
     source = "../.."
 }

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../state/spotify_models.dart';
+import '../ui/theme/app_fx.dart';
 import '../ui/theme/colors.dart';
+import '../ui/widgets/media_cover.dart';
 
 enum SearchResultType {
   playlist('Playlists'),
@@ -39,13 +42,59 @@ class SearchRecentSession {
     required this.subtitle,
     required this.detail,
     required this.bpm,
+    required this.imageAsset,
   });
 
   final String title;
   final String subtitle;
   final String detail;
   final int bpm;
+  final String imageAsset;
 }
+
+class SearchCatalogEntry {
+  const SearchCatalogEntry({
+    required this.title,
+    required this.subtitle,
+    required this.imageUrl,
+    required this.type,
+    required this.bpm,
+    required this.useCase,
+    required this.mood,
+    required this.durationMinutes,
+    required this.keywords,
+  });
+
+  factory SearchCatalogEntry.fromSpotify(SpotifySearchEntry entry) {
+    return SearchCatalogEntry(
+      title: entry.title,
+      subtitle: entry.subtitle,
+      imageUrl: entry.imageUrl,
+      type: switch (entry.type) {
+        SpotifySearchEntryType.playlist => SearchResultType.playlist,
+        SpotifySearchEntryType.track => SearchResultType.track,
+        SpotifySearchEntryType.artist => SearchResultType.artist,
+      },
+      bpm: entry.bpm,
+      useCase: entry.useCase,
+      mood: entry.mood,
+      durationMinutes: entry.durationMinutes,
+      keywords: entry.keywords,
+    );
+  }
+
+  final String title;
+  final String subtitle;
+  final String imageUrl;
+  final SearchResultType type;
+  final int? bpm;
+  final String useCase;
+  final String mood;
+  final int durationMinutes;
+  final List<String> keywords;
+}
+
+enum _PaceFilterMode { currentPace, manualRange }
 
 class SearchPage extends StatefulWidget {
   const SearchPage({
@@ -53,11 +102,13 @@ class SearchPage extends StatefulWidget {
     required this.targetBpm,
     required this.paceRange,
     required this.recentSessions,
+    this.catalogEntries,
   });
 
   final int targetBpm;
   final RangeValues paceRange;
   final List<SearchRecentSession> recentSessions;
+  final List<SearchCatalogEntry>? catalogEntries;
 
   @override
   State<SearchPage> createState() => _SearchPageState();
@@ -93,16 +144,11 @@ class _SearchPageState extends State<SearchPage> {
   ];
 
   static const _moods = ['Focused', 'Calm', 'Driven', 'Dark', 'Euphoric'];
-  static const _recentQueries = [
-    'night walk',
-    'focused 110 bpm',
-    'warm up mix',
-  ];
-
-  static const _catalog = [
+  static const _fallbackCatalog = [
     _SearchItem(
       title: 'Night Tempo Walk',
       subtitle: 'For focused city walks',
+      imageAsset: 'assets/images/musicCover1.webp',
       type: SearchResultType.playlist,
       bpm: 112,
       useCase: 'Night walk',
@@ -113,6 +159,7 @@ class _SearchPageState extends State<SearchPage> {
     _SearchItem(
       title: 'Recovery Loop',
       subtitle: 'Soft reset after long days',
+      imageAsset: 'assets/images/musicCover3.webp',
       type: SearchResultType.playlist,
       bpm: 98,
       useCase: 'Recovery',
@@ -123,6 +170,7 @@ class _SearchPageState extends State<SearchPage> {
     _SearchItem(
       title: 'Sunline Start',
       subtitle: 'Ease into your first kilometer',
+      imageAsset: 'assets/images/musicCover4.webp',
       type: SearchResultType.playlist,
       bpm: 104,
       useCase: 'Warm up',
@@ -133,6 +181,7 @@ class _SearchPageState extends State<SearchPage> {
     _SearchItem(
       title: 'Steady Asphalt',
       subtitle: 'Locked pace for everyday runs',
+      imageAsset: 'assets/images/musicCover2.webp',
       type: SearchResultType.playlist,
       bpm: 116,
       useCase: 'Steady run',
@@ -143,6 +192,7 @@ class _SearchPageState extends State<SearchPage> {
     _SearchItem(
       title: 'Moonlit Motion',
       subtitle: 'Dark pulse for after-hours walks',
+      imageAsset: 'assets/images/musicCover5.webp',
       type: SearchResultType.playlist,
       bpm: 110,
       useCase: 'Night walk',
@@ -153,6 +203,7 @@ class _SearchPageState extends State<SearchPage> {
     _SearchItem(
       title: 'Seremise',
       subtitle: 'NITE SHIFT, Luma Cove',
+      imageAsset: 'assets/images/musicCover8.webp',
       type: SearchResultType.track,
       bpm: 112,
       useCase: 'Night walk',
@@ -163,6 +214,7 @@ class _SearchPageState extends State<SearchPage> {
     _SearchItem(
       title: 'Afterglow',
       subtitle: 'Evening Runner',
+      imageAsset: 'assets/images/musicCover9.webp',
       type: SearchResultType.track,
       bpm: 118,
       useCase: 'Steady run',
@@ -173,6 +225,7 @@ class _SearchPageState extends State<SearchPage> {
     _SearchItem(
       title: 'Mirage',
       subtitle: 'Sunset Tempo',
+      imageAsset: 'assets/images/musicCover10.webp',
       type: SearchResultType.track,
       bpm: 105,
       useCase: 'Warm up',
@@ -183,6 +236,7 @@ class _SearchPageState extends State<SearchPage> {
     _SearchItem(
       title: 'Glass City',
       subtitle: 'Night Tempo Walk',
+      imageAsset: 'assets/images/musicCover6.webp',
       type: SearchResultType.track,
       bpm: 110,
       useCase: 'Night walk',
@@ -193,6 +247,7 @@ class _SearchPageState extends State<SearchPage> {
     _SearchItem(
       title: 'Halo Steps',
       subtitle: 'Dawn Arcade',
+      imageAsset: 'assets/images/musicCover7.webp',
       type: SearchResultType.track,
       bpm: 99,
       useCase: 'Recovery',
@@ -203,6 +258,7 @@ class _SearchPageState extends State<SearchPage> {
     _SearchItem(
       title: 'Circuit Bloom',
       subtitle: 'Pace District',
+      imageAsset: 'assets/images/musicCover4.webp',
       type: SearchResultType.track,
       bpm: 108,
       useCase: 'Focus',
@@ -213,6 +269,7 @@ class _SearchPageState extends State<SearchPage> {
     _SearchItem(
       title: 'NITE SHIFT',
       subtitle: 'Night-walk edits and steady BPM pockets',
+      imageAsset: 'assets/images/musicCover8.webp',
       type: SearchResultType.artist,
       bpm: null,
       useCase: 'Night walk',
@@ -223,6 +280,7 @@ class _SearchPageState extends State<SearchPage> {
     _SearchItem(
       title: 'Tempo Atlas',
       subtitle: 'Playlist-first curator for locked-in runs',
+      imageAsset: 'assets/images/musicCover2.webp',
       type: SearchResultType.artist,
       bpm: null,
       useCase: 'Steady run',
@@ -233,6 +291,7 @@ class _SearchPageState extends State<SearchPage> {
     _SearchItem(
       title: 'Luma Cove',
       subtitle: 'Warm neon textures for focused sessions',
+      imageAsset: 'assets/images/musicCover1.webp',
       type: SearchResultType.artist,
       bpm: null,
       useCase: 'Focus',
@@ -242,6 +301,29 @@ class _SearchPageState extends State<SearchPage> {
     ),
   ];
 
+  List<_SearchItem> get _catalog {
+    final customEntries = widget.catalogEntries;
+    if (customEntries == null || customEntries.isEmpty) {
+      return _fallbackCatalog;
+    }
+
+    return customEntries
+        .map(
+          (entry) => _SearchItem(
+            title: entry.title,
+            subtitle: entry.subtitle,
+            imageAsset: entry.imageUrl,
+            type: entry.type,
+            bpm: entry.bpm,
+            useCase: entry.useCase,
+            mood: entry.mood,
+            durationMinutes: entry.durationMinutes,
+            keywords: entry.keywords,
+          ),
+        )
+        .toList(growable: false);
+  }
+
   final TextEditingController _searchController = TextEditingController();
 
   late RangeValues _paceRange;
@@ -249,7 +331,7 @@ class _SearchPageState extends State<SearchPage> {
   String? _selectedUseCase;
   String? _selectedMood;
   SearchDurationFilter? _selectedDuration;
-  bool _matchMyPace = false;
+  _PaceFilterMode _paceFilterMode = _PaceFilterMode.currentPace;
 
   @override
   void initState() {
@@ -267,53 +349,65 @@ class _SearchPageState extends State<SearchPage> {
       _paceRange.start != widget.paceRange.start ||
       _paceRange.end != widget.paceRange.end;
 
+  bool get _usesCurrentPacePreset =>
+      _paceFilterMode == _PaceFilterMode.currentPace;
+
   bool get _showingResults =>
       _query.trim().isNotEmpty ||
-      _matchMyPace ||
       _selectedUseCase != null ||
       _selectedMood != null ||
       _selectedDuration != null ||
-      _hasCustomPaceRange;
+      (_paceFilterMode == _PaceFilterMode.manualRange && _hasCustomPaceRange);
 
   int get _activeFilterCount {
     var count = 0;
     if (_selectedUseCase != null) count++;
     if (_selectedMood != null) count++;
     if (_selectedDuration != null) count++;
-    if (_hasCustomPaceRange) count++;
+    if (_paceFilterMode == _PaceFilterMode.manualRange && _hasCustomPaceRange) {
+      count++;
+    }
     return count;
   }
 
   List<_SearchItem> get _filteredItems {
     final query = _query.trim().toLowerCase();
-    final items = _catalog.where((item) {
-      final haystack = [
-        item.title,
-        item.subtitle,
-        item.useCase,
-        item.mood,
-        ...item.keywords,
-      ].join(' ').toLowerCase();
-      final queryMatch = query.isEmpty || haystack.contains(query);
-      final useCaseMatch =
-          _selectedUseCase == null || item.useCase == _selectedUseCase;
-      final moodMatch = _selectedMood == null || item.mood == _selectedMood;
-      final durationMatch =
-          _selectedDuration == null ||
-          _selectedDuration!.matches(item.durationMinutes);
-      final paceMatch = switch (item.bpm) {
-        final bpm? =>
-          bpm >= _paceRange.start.round() && bpm <= _paceRange.end.round(),
-        null => query.isNotEmpty,
-      };
-      if (!queryMatch || !useCaseMatch || !moodMatch || !durationMatch) {
-        return false;
-      }
-      if (_matchMyPace || _hasCustomPaceRange) {
-        return paceMatch;
-      }
-      return true;
-    }).toList(growable: false);
+    final items = _catalog
+        .where((item) {
+          final haystack = [
+            item.title,
+            item.subtitle,
+            item.useCase,
+            item.mood,
+            ...item.keywords,
+          ].join(' ').toLowerCase();
+          final queryMatch = query.isEmpty || haystack.contains(query);
+          final useCaseMatch =
+              _selectedUseCase == null || item.useCase == _selectedUseCase;
+          final moodMatch = _selectedMood == null || item.mood == _selectedMood;
+          final durationMatch =
+              _selectedDuration == null ||
+              _selectedDuration!.matches(item.durationMinutes);
+          final activePaceRange = _usesCurrentPacePreset
+              ? widget.paceRange
+              : _paceRange;
+          final paceMatch = switch (item.bpm) {
+            final bpm? =>
+              bpm >= activePaceRange.start.round() &&
+                  bpm <= activePaceRange.end.round(),
+            null => query.isNotEmpty,
+          };
+          if (!queryMatch || !useCaseMatch || !moodMatch || !durationMatch) {
+            return false;
+          }
+          if (_usesCurrentPacePreset ||
+              (_paceFilterMode == _PaceFilterMode.manualRange &&
+                  _hasCustomPaceRange)) {
+            return paceMatch;
+          }
+          return true;
+        })
+        .toList(growable: false);
     items.sort(_compareItems);
     return items;
   }
@@ -337,9 +431,8 @@ class _SearchPageState extends State<SearchPage> {
     }
   }
 
-  int _fitDelta(_SearchItem item) => item.bpm == null
-      ? 999
-      : (item.bpm! - widget.targetBpm).abs();
+  int _fitDelta(_SearchItem item) =>
+      item.bpm == null ? 999 : (item.bpm! - widget.targetBpm).abs();
 
   String _fitLabel(_SearchItem item) {
     if (item.bpm == null) return 'Artist pick';
@@ -348,13 +441,6 @@ class _SearchPageState extends State<SearchPage> {
     if (absolute <= 2) return 'Perfect fit';
     if (absolute <= 5) return 'Good match';
     return delta > 0 ? '+$absolute BPM' : '-$absolute BPM';
-  }
-
-  void _setUseCaseFilter(String value) {
-    setState(() {
-      _selectedUseCase = value;
-      _matchMyPace = false;
-    });
   }
 
   void _clearSearchQuery() {
@@ -368,6 +454,7 @@ class _SearchPageState extends State<SearchPage> {
     var selectedUseCase = _selectedUseCase;
     var selectedMood = _selectedMood;
     var selectedDuration = _selectedDuration;
+    var paceFilterMode = _paceFilterMode;
     var paceRange = _paceRange;
 
     await showModalBottomSheet<void>(
@@ -383,52 +470,84 @@ class _SearchPageState extends State<SearchPage> {
               ),
               child: ConstrainedBox(
                 constraints: BoxConstraints(
-                  maxHeight: MediaQuery.of(context).size.height * 0.85,
+                  maxHeight: MediaQuery.of(context).size.height * 0.82,
                 ),
                 child: Container(
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF111818),
-                    borderRadius:
-                        BorderRadius.vertical(top: Radius.circular(30)),
+                  decoration: BoxDecoration(
+                    gradient: AppFx.raisedPanelGradient,
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(30),
+                    ),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.08),
+                    ),
+                    boxShadow: AppFx.softGlow(
+                      AppColors.primary,
+                      strength: 0.14,
+                    ),
                   ),
-                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+                  padding: const EdgeInsets.fromLTRB(18, 16, 18, 20),
                   child: SafeArea(
                     top: false,
-                    child: SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Center(
-                            child: Container(
-                              width: 44,
-                              height: 4,
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.18),
-                                borderRadius: BorderRadius.circular(999),
-                              ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Center(
+                          child: Container(
+                            width: 44,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.18),
+                              borderRadius: BorderRadius.circular(999),
                             ),
                           ),
-                          const SizedBox(height: 20),
-                          const Text(
-                            'Tune your search',
-                            style: TextStyle(
-                              color: AppColors.textPrimary,
-                              fontSize: 24,
-                              fontWeight: FontWeight.w700,
-                            ),
+                        ),
+                        const SizedBox(height: 14),
+                        const Text(
+                          'Tune your search',
+                          style: TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w700,
                           ),
+                        ),
+                        const SizedBox(height: 16),
+                          _sheetLabel('Pace source'),
                           const SizedBox(height: 8),
-                          const Text(
-                            'Keep the page clean, but dial in the exact vibe here.',
-                            style: TextStyle(
-                              color: AppColors.textSecondary,
-                              fontSize: 14,
-                              height: 1.45,
-                            ),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              _sheetChip(
+                                label: 'Use current pace',
+                                selected:
+                                    paceFilterMode ==
+                                    _PaceFilterMode.currentPace,
+                                onTap: () {
+                                  setModalState(() {
+                                    paceFilterMode =
+                                        _PaceFilterMode.currentPace;
+                                    paceRange = widget.paceRange;
+                                  });
+                                },
+                              ),
+                              _sheetChip(
+                                label: 'Manual range',
+                                selected:
+                                    paceFilterMode ==
+                                    _PaceFilterMode.manualRange,
+                                onTap: () {
+                                  setModalState(() {
+                                    paceFilterMode =
+                                        _PaceFilterMode.manualRange;
+                                  });
+                                },
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 24),
+                          const SizedBox(height: 16),
                           _sheetLabel('Use case'),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 8),
                           Wrap(
                             spacing: 8,
                             runSpacing: 8,
@@ -448,9 +567,9 @@ class _SearchPageState extends State<SearchPage> {
                                 ),
                             ],
                           ),
-                          const SizedBox(height: 24),
+                          const SizedBox(height: 16),
                           _sheetLabel('Mood'),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 8),
                           Wrap(
                             spacing: 8,
                             runSpacing: 8,
@@ -461,21 +580,23 @@ class _SearchPageState extends State<SearchPage> {
                                   selected: selectedMood == mood,
                                   onTap: () {
                                     setModalState(() {
-                                      selectedMood =
-                                          selectedMood == mood ? null : mood;
+                                      selectedMood = selectedMood == mood
+                                          ? null
+                                          : mood;
                                     });
                                   },
                                 ),
                             ],
                           ),
-                          const SizedBox(height: 24),
+                          const SizedBox(height: 16),
                           _sheetLabel('Duration'),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 8),
                           Wrap(
                             spacing: 8,
                             runSpacing: 8,
                             children: [
-                              for (final duration in SearchDurationFilter.values)
+                              for (final duration
+                                  in SearchDurationFilter.values)
                                 _sheetChip(
                                   label: duration.label,
                                   selected: selectedDuration == duration,
@@ -490,14 +611,17 @@ class _SearchPageState extends State<SearchPage> {
                                 ),
                             ],
                           ),
-                          const SizedBox(height: 24),
+                          const SizedBox(height: 16),
                           _sheetLabel('Pace range'),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 6),
                           Text(
-                            '${paceRange.start.round()}-${paceRange.end.round()} BPM',
+                            paceFilterMode == _PaceFilterMode.currentPace
+                                ? 'Using your current pace: '
+                                      '${widget.paceRange.start.round()}-${widget.paceRange.end.round()} BPM'
+                                : '${paceRange.start.round()}-${paceRange.end.round()} BPM',
                             style: const TextStyle(
                               color: AppColors.textPrimary,
-                              fontSize: 18,
+                              fontSize: 15,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -513,15 +637,20 @@ class _SearchPageState extends State<SearchPage> {
                               paceRange.end.round().toString(),
                             ),
                             onChanged: (values) {
-                              setModalState(() => paceRange = values);
+                              setModalState(() {
+                                paceFilterMode = _PaceFilterMode.manualRange;
+                                paceRange = values;
+                              });
                             },
                           ),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 4),
                           Row(
                             children: [
                               TextButton(
                                 onPressed: () {
                                   setModalState(() {
+                                    paceFilterMode =
+                                        _PaceFilterMode.currentPace;
                                     selectedUseCase = null;
                                     selectedMood = null;
                                     selectedDuration = null;
@@ -532,7 +661,7 @@ class _SearchPageState extends State<SearchPage> {
                                   'Clear all',
                                   style: TextStyle(
                                     color: AppColors.textSecondary,
-                                    fontSize: 15,
+                                    fontSize: 14,
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
@@ -540,7 +669,7 @@ class _SearchPageState extends State<SearchPage> {
                               const SizedBox(width: 12),
                               Expanded(
                                 child: SizedBox(
-                                  height: 52,
+                                  height: 48,
                                   child: ElevatedButton(
                                     style: ElevatedButton.styleFrom(
                                       backgroundColor: AppColors.primary,
@@ -551,18 +680,19 @@ class _SearchPageState extends State<SearchPage> {
                                     ),
                                     onPressed: () {
                                       setState(() {
+                                        _paceFilterMode = paceFilterMode;
                                         _selectedUseCase = selectedUseCase;
                                         _selectedMood = selectedMood;
                                         _selectedDuration = selectedDuration;
                                         _paceRange = paceRange;
-                                        _matchMyPace = false;
                                       });
                                       Navigator.of(context).pop();
                                     },
                                     child: const Text(
                                       'Apply filters',
                                       style: TextStyle(
-                                        fontSize: 15,
+                                        color: AppColors.textPrimary,
+                                        fontSize: 14,
                                         fontWeight: FontWeight.w700,
                                       ),
                                     ),
@@ -571,8 +701,7 @@ class _SearchPageState extends State<SearchPage> {
                               ),
                             ],
                           ),
-                        ],
-                      ),
+                      ],
                     ),
                   ),
                 ),
@@ -591,8 +720,8 @@ class _SearchPageState extends State<SearchPage> {
       (item) => item.type != SearchResultType.artist,
       orElse: () => const _SearchItem.empty(),
     );
-    final hasTopResult = topResult.type != SearchResultType.artist ||
-        topResult.title.isNotEmpty;
+    final hasTopResult =
+        topResult.type != SearchResultType.artist || topResult.title.isNotEmpty;
     final remainingItems = filteredItems
         .where((item) => !identical(item, topResult))
         .toList(growable: false);
@@ -612,10 +741,6 @@ class _SearchPageState extends State<SearchPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildSearchBar(),
-          const SizedBox(height: 18),
-          _buildMatchMyPaceCard(),
-          const SizedBox(height: 14),
-          _buildFilterRow(),
           const SizedBox(height: 20),
           if (_showingResults)
             _buildResultsView(
@@ -634,13 +759,10 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   Widget _buildSearchBar() {
-    return Container(
+    return FrostedPanel(
+      radius: 28,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(26),
-        border: Border.all(color: AppColors.border),
-      ),
+      glowColor: AppColors.primary,
       child: Row(
         children: [
           const Icon(Icons.search_rounded, color: AppColors.textSecondary),
@@ -652,9 +774,6 @@ class _SearchPageState extends State<SearchPage> {
               onChanged: (value) {
                 setState(() {
                   _query = value;
-                  if (value.trim().isNotEmpty) {
-                    _matchMyPace = false;
-                  }
                 });
               },
               style: const TextStyle(
@@ -686,10 +805,21 @@ class _SearchPageState extends State<SearchPage> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
-                color: _activeFilterCount == 0
-                    ? Colors.white.withValues(alpha: 0.05)
-                    : AppColors.primary.withValues(alpha: 0.18),
                 borderRadius: BorderRadius.circular(18),
+                gradient: _activeFilterCount == 0
+                    ? const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Color(0x661A221E), Color(0x33211D20)],
+                      )
+                    : const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Color(0xAA1ED760), Color(0x66FF5A5F)],
+                      ),
+                boxShadow: _activeFilterCount == 0
+                    ? null
+                    : AppFx.softGlow(AppColors.primary, strength: 0.18),
               ),
               child: Row(
                 children: [
@@ -718,139 +848,6 @@ class _SearchPageState extends State<SearchPage> {
     );
   }
 
-  Widget _buildMatchMyPaceCard() {
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          _searchController.clear();
-          _query = '';
-          _selectedUseCase = null;
-          _selectedMood = null;
-          _selectedDuration = null;
-          _paceRange = widget.paceRange;
-          _matchMyPace = true;
-        });
-      },
-      child: Container(
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(28),
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFF16362C), Color(0xFF0F1715)],
-          ),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(18),
-                color: AppColors.primary.withValues(alpha: 0.16),
-              ),
-              child: const Icon(
-                Icons.flash_on_rounded,
-                color: AppColors.primaryBright,
-                size: 26,
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Match my pace',
-                    style: TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Start from ${widget.targetBpm} BPM and keep results near '
-                    '${_paceRange.start.round()}-${_paceRange.end.round()} BPM.',
-                    style: const TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 14,
-                      height: 1.4,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: const Icon(
-                Icons.arrow_forward_rounded,
-                color: AppColors.textPrimary,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFilterRow() {
-    Widget chip(String label, {bool emphasized = false}) {
-      return GestureDetector(
-        onTap: _openFiltersSheet,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            color: emphasized
-                ? AppColors.primary.withValues(alpha: 0.18)
-                : Colors.white.withValues(alpha: 0.05),
-            borderRadius: BorderRadius.circular(999),
-          ),
-          child: Text(
-            label,
-            style: const TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-      );
-    }
-
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          chip(_selectedUseCase == null
-              ? 'Use case'
-              : 'Use case: $_selectedUseCase'),
-          const SizedBox(width: 8),
-          chip(_selectedMood == null ? 'Mood' : 'Mood: $_selectedMood'),
-          const SizedBox(width: 8),
-          chip(_selectedDuration == null
-              ? 'Duration'
-              : 'Duration: ${_selectedDuration!.label}'),
-          const SizedBox(width: 8),
-          chip(
-            _activeFilterCount == 0
-                ? 'Filters'
-                : 'Filters ($_activeFilterCount)',
-            emphasized: _activeFilterCount > 0,
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildBrowseView(List<_SearchItem> filteredItems) {
     final bestForPace = filteredItems
         .where((item) => item.type != SearchResultType.artist)
@@ -870,43 +867,7 @@ class _SearchPageState extends State<SearchPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _sectionHeader('Browse by use case', 'Start from intent'),
-        const SizedBox(height: 12),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              for (var i = 0; i < _useCases.length; i++) ...[
-                _useCaseCard(_useCases[i]),
-                if (i != _useCases.length - 1) const SizedBox(width: 12),
-              ],
-            ],
-          ),
-        ),
-        const SizedBox(height: 18),
-        _sectionHeader('Best for your pace', 'Closest fits first'),
-        const SizedBox(height: 12),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              for (var i = 0; i < bestForPace.length; i++) ...[
-                _mixedCard(bestForPace[i]),
-                if (i != bestForPace.length - 1) const SizedBox(width: 12),
-              ],
-            ],
-          ),
-        ),
-        const SizedBox(height: 18),
-        _sectionHeader('Recent searches / Jump back in', 'Keep momentum'),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final query in _recentQueries) _queryChip(query),
-          ],
-        ),
+        _sectionHeader('Recently played'),
         const SizedBox(height: 12),
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
@@ -921,7 +882,21 @@ class _SearchPageState extends State<SearchPage> {
           ),
         ),
         const SizedBox(height: 18),
-        _sectionHeader('Fresh for your range', 'Popular near your pace'),
+        _sectionHeader('Best for your pace'),
+        const SizedBox(height: 12),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              for (var i = 0; i < bestForPace.length; i++) ...[
+                _mixedCard(bestForPace[i]),
+                if (i != bestForPace.length - 1) const SizedBox(width: 12),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 18),
+        _sectionHeader('Fresh picks'),
         const SizedBox(height: 12),
         Column(
           children: [
@@ -944,42 +919,38 @@ class _SearchPageState extends State<SearchPage> {
     required List<_SearchItem> artists,
   }) {
     if (filteredItems.isEmpty) {
-      return Container(
-        width: double.infinity,
+      return FrostedPanel(
+        radius: 30,
         padding: const EdgeInsets.all(22),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(28),
-          border: Border.all(color: AppColors.border),
-        ),
+        glowColor: AppColors.cinemaRed,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'No close matches yet',
+              'No matches yet',
               style: TextStyle(
                 color: AppColors.textPrimary,
-                fontSize: 24,
+                fontSize: 22,
                 fontWeight: FontWeight.w700,
               ),
             ),
             const SizedBox(height: 8),
             const Text(
-              'Try widening the mood or use-case filters, or jump into one of the common lanes below.',
+              'Try the filter button or widen the pace range.',
               style: TextStyle(
                 color: AppColors.textSecondary,
-                fontSize: 14,
-                height: 1.45,
+                fontSize: 13,
+                height: 1.35,
               ),
             ),
             const SizedBox(height: 18),
             Wrap(
               spacing: 10,
               runSpacing: 10,
-              children: [
-                _recoveryChip('Night walk'),
-                _recoveryChip('Focus'),
-                _recoveryChip('Warm up'),
+              children: const [
+                _StaticHintChip(label: 'Try the filter button'),
+                _StaticHintChip(label: 'Use current pace'),
+                _StaticHintChip(label: 'Widen duration'),
               ],
             ),
             const SizedBox(height: 18),
@@ -988,11 +959,11 @@ class _SearchPageState extends State<SearchPage> {
                 setState(() {
                   _searchController.clear();
                   _query = '';
+                  _paceFilterMode = _PaceFilterMode.currentPace;
                   _selectedUseCase = null;
                   _selectedMood = null;
                   _selectedDuration = null;
                   _paceRange = widget.paceRange;
-                  _matchMyPace = false;
                 });
               },
               child: const Text(
@@ -1013,13 +984,13 @@ class _SearchPageState extends State<SearchPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (hasTopResult) ...[
-          _sectionHeader('Best pace-fit', 'Closest match'),
+          _sectionHeader('Top match'),
           const SizedBox(height: 12),
           _topMatchCard(topResult),
           const SizedBox(height: 18),
         ],
         if (playlists.isNotEmpty) ...[
-          _sectionHeader('Playlists', 'Session-ready'),
+          _sectionHeader('Playlists'),
           const SizedBox(height: 12),
           for (var i = 0; i < playlists.length; i++) ...[
             _resultCard(playlists[i]),
@@ -1028,7 +999,7 @@ class _SearchPageState extends State<SearchPage> {
           const SizedBox(height: 18),
         ],
         if (tracks.isNotEmpty) ...[
-          _sectionHeader('Tracks', 'Exact picks'),
+          _sectionHeader('Tracks'),
           const SizedBox(height: 12),
           for (var i = 0; i < tracks.length; i++) ...[
             _resultCard(tracks[i]),
@@ -1037,7 +1008,7 @@ class _SearchPageState extends State<SearchPage> {
           const SizedBox(height: 18),
         ],
         if (artists.isNotEmpty) ...[
-          _sectionHeader('Artists', 'Secondary matches'),
+          _sectionHeader('Artists'),
           const SizedBox(height: 12),
           for (var i = 0; i < artists.length; i++) ...[
             _resultCard(artists[i]),
@@ -1048,430 +1019,364 @@ class _SearchPageState extends State<SearchPage> {
     );
   }
 
-  Widget _sectionHeader(String title, String trailing) => Row(
+  Widget _sectionHeader(String title) => Row(
+    children: [
+      Text(
+        title,
+        style: const TextStyle(
+          color: AppColors.textPrimary,
+          fontSize: 18,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    ],
+  );
+
+  Widget _mixedCard(_SearchItem item) => SizedBox(
+    width: 170,
+    height: 178,
+    child: FrostedPanel(
+      radius: 24,
+      padding: const EdgeInsets.all(12),
+      glowColor: item.type == SearchResultType.artist
+          ? AppColors.cinemaRed
+          : AppColors.primary,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          _largeMediaBadge(item),
+          const Spacer(),
           Text(
-            title,
+            item.title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: AppColors.textPrimary,
-              fontSize: 18,
+              fontSize: 15,
+              height: 1.1,
               fontWeight: FontWeight.w700,
             ),
           ),
-          const Spacer(),
+          const SizedBox(height: 8),
           Text(
-            trailing,
+            item.bpm != null ? '${item.bpm} BPM' : item.type.sectionTitle,
             style: const TextStyle(
-              color: AppColors.textMuted,
+              color: AppColors.textSecondary,
               fontSize: 12,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],
-      );
+      ),
+    ),
+  );
 
-  Widget _useCaseCard(_UseCaseData data) => GestureDetector(
-        onTap: () => _setUseCaseFilter(data.title),
-        child: Container(
-          width: 192,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: AppColors.border),
+  Widget _recentSessionCard(SearchRecentSession session) => SizedBox(
+    width: 170,
+    height: 160,
+    child: FrostedPanel(
+      radius: 24,
+      padding: const EdgeInsets.all(12),
+      glowColor: AppColors.primary,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _recentMediaBadge(session),
+          const Spacer(),
+          Text(
+            session.title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 15,
+              height: 1.1,
+              fontWeight: FontWeight.w700,
+            ),
           ),
+          const SizedBox(height: 8),
+          Text(
+            '${session.bpm} BPM',
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Widget _topMatchCard(_SearchItem item) => FrostedPanel(
+    radius: 30,
+    padding: const EdgeInsets.all(16),
+    elevated: true,
+    glowColor: AppColors.primary,
+    child: Row(
+      children: [
+        _heroMediaBadge(item),
+        const SizedBox(width: 14),
+        Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _pill(data.bpmLabel, AppColors.primaryBright),
-              const SizedBox(height: 16),
               Text(
-                data.title,
+                item.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: AppColors.textPrimary,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
               const SizedBox(height: 8),
-              Text(
-                data.description,
-                style: const TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 14,
-                  height: 1.45,
-                ),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  if (item.bpm != null)
+                    _pill('${item.bpm} BPM', AppColors.textPrimary),
+                  _pill(
+                    item.type == SearchResultType.playlist
+                        ? 'Playlist'
+                        : 'Track',
+                    AppColors.textPrimary,
+                  ),
+                  _pill(_fitLabel(item), AppColors.primaryBright),
+                ],
               ),
             ],
           ),
         ),
-      );
+      ],
+    ),
+  );
 
-  Widget _mixedCard(_SearchItem item) => Container(
-        width: 214,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                _pill(
-                  item.type == SearchResultType.playlist ? 'Playlist' : 'Track',
-                  AppColors.textPrimary,
-                ),
-                if (item.bpm != null)
-                  Text(
-                    '${item.bpm} BPM',
-                    style: const TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            Text(
-              item.title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              item.subtitle,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 13,
-                height: 1.4,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              _fitLabel(item),
-              style: const TextStyle(
-                color: AppColors.primaryBright,
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
-      );
-
-  Widget _queryChip(String query) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(999),
-        ),
-        child: Text(
-          query,
-          style: const TextStyle(
-            color: AppColors.textPrimary,
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      );
-
-  Widget _recentSessionCard(SearchRecentSession session) => Container(
-        width: 196,
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              session.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              session.subtitle,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    session.detail,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  '${session.bpm} BPM',
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      );
-
-  Widget _topMatchCard(_SearchItem item) => Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: AppColors.surfaceRaised,
-          borderRadius: BorderRadius.circular(28),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                _pill(_fitLabel(item), AppColors.primaryBright),
-                const Spacer(),
-                Text(
-                  item.type == SearchResultType.playlist ? 'Playlist' : 'Track',
-                  style: const TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              item.title,
-              style: const TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 26,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              item.subtitle,
-              style: const TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 14,
-                height: 1.45,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                _pill('${item.bpm} BPM', AppColors.textPrimary),
-                const SizedBox(width: 8),
-                _pill(item.useCase, AppColors.textPrimary),
-                const SizedBox(width: 8),
-                _pill('Start synced', AppColors.textPrimary),
-              ],
-            ),
-          ],
-        ),
-      );
-
-  Widget _resultCard(_SearchItem item) => Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: item.type == SearchResultType.artist
-                      ? const [Color(0xFF223633), Color(0xFF111817)]
-                      : const [AppColors.accent, AppColors.primary],
+  Widget _resultCard(_SearchItem item) => FrostedPanel(
+    radius: 24,
+    padding: const EdgeInsets.all(14),
+    glowColor: item.type == SearchResultType.artist
+        ? AppColors.cinemaRed
+        : AppColors.primary,
+    child: Row(
+      children: [
+        _compactMediaBadge(item),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                item.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
-              child: Icon(
-                switch (item.type) {
-                  SearchResultType.playlist => Icons.queue_music_rounded,
-                  SearchResultType.track => Icons.music_note_rounded,
-                  SearchResultType.artist => Icons.mic_rounded,
-                },
-                color: item.type == SearchResultType.artist
-                    ? AppColors.textPrimary
-                    : AppColors.background,
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
                 children: [
-                  Text(
-                    item.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 17,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    item.subtitle,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 13,
-                      height: 1.35,
-                    ),
-                  ),
+                  if (item.bpm != null)
+                    _pill('${item.bpm} BPM', AppColors.textPrimary),
+                  _pill(_fitLabel(item), AppColors.primaryBright),
                 ],
               ),
-            ),
-            const SizedBox(width: 10),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                if (item.bpm != null)
-                  Text(
-                    '${item.bpm} BPM',
-                    style: const TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                const SizedBox(height: 4),
-                Text(
-                  _fitLabel(item),
-                  style: const TextStyle(
-                    color: AppColors.primaryBright,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ],
+            ],
+          ),
         ),
-      );
+      ],
+    ),
+  );
 
   Widget _pill(String label, Color textColor) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.06),
-          borderRadius: BorderRadius.circular(999),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: textColor,
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      );
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+    decoration: BoxDecoration(
+      color: Colors.white.withValues(alpha: 0.08),
+      borderRadius: BorderRadius.circular(999),
+    ),
+    child: Text(
+      label,
+      style: TextStyle(
+        color: textColor,
+        fontSize: 12,
+        fontWeight: FontWeight.w700,
+      ),
+    ),
+  );
 
-  Widget _recoveryChip(String label) => GestureDetector(
-        onTap: () => _setUseCaseFilter(label),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.06),
-            borderRadius: BorderRadius.circular(999),
+  Widget _largeMediaBadge(_SearchItem item) => MediaCover(
+    imageAsset: item.imageAsset,
+    size: 72,
+    borderRadius: 20,
+    child: Stack(
+      children: [
+        Positioned(
+          right: -8,
+          top: -6,
+          child: Icon(
+            switch (item.type) {
+              SearchResultType.playlist => Icons.queue_music_rounded,
+              SearchResultType.track => Icons.music_note_rounded,
+              SearchResultType.artist => Icons.mic_rounded,
+            },
+            size: 42,
+            color: Colors.white.withValues(alpha: 0.16),
           ),
+        ),
+        if (item.bpm != null)
+          Positioned(
+            left: 10,
+            bottom: 8,
+            child: Text(
+              '${item.bpm}',
+              style: const TextStyle(
+                color: AppColors.background,
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+      ],
+    ),
+  );
+
+  Widget _recentMediaBadge(SearchRecentSession session) => MediaCover(
+    imageAsset: session.imageAsset,
+    size: 72,
+    borderRadius: 20,
+    child: Stack(
+      children: [
+        Positioned(
+          right: -8,
+          top: -6,
+          child: Icon(
+            Icons.play_arrow_rounded,
+            size: 44,
+            color: Colors.white.withValues(alpha: 0.14),
+          ),
+        ),
+        Positioned(
+          left: 10,
+          bottom: 8,
           child: Text(
-            label,
+            '${session.bpm}',
             style: const TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
+              color: AppColors.background,
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
             ),
           ),
         ),
-      );
+      ],
+    ),
+  );
+
+  Widget _heroMediaBadge(_SearchItem item) => MediaCover(
+    imageAsset: item.imageAsset,
+    size: 92,
+    borderRadius: 24,
+    child: Stack(
+      children: [
+        Positioned(
+          right: -6,
+          top: -4,
+          child: Icon(
+            switch (item.type) {
+              SearchResultType.playlist => Icons.queue_music_rounded,
+              SearchResultType.track => Icons.music_note_rounded,
+              SearchResultType.artist => Icons.mic_rounded,
+            },
+            size: 56,
+            color: Colors.white.withValues(alpha: 0.16),
+          ),
+        ),
+        if (item.bpm != null)
+          Positioned(
+            left: 12,
+            bottom: 10,
+            child: Text(
+              '${item.bpm}',
+              style: const TextStyle(
+                color: AppColors.background,
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+      ],
+    ),
+  );
+
+  Widget _compactMediaBadge(_SearchItem item) => MediaCover(
+    imageAsset: item.imageAsset,
+    size: 54,
+    borderRadius: 16,
+    child: Center(
+      child: Icon(
+        switch (item.type) {
+          SearchResultType.playlist => Icons.queue_music_rounded,
+          SearchResultType.track => Icons.music_note_rounded,
+          SearchResultType.artist => Icons.mic_rounded,
+        },
+        color: item.type == SearchResultType.artist
+            ? AppColors.textPrimary
+            : AppColors.background,
+        size: 24,
+      ),
+    ),
+  );
 
   Widget _sheetLabel(String title) => Text(
-        title,
-        style: const TextStyle(
-          color: AppColors.textPrimary,
-          fontSize: 16,
-          fontWeight: FontWeight.w700,
-        ),
-      );
+    title,
+    style: const TextStyle(
+      color: AppColors.textPrimary,
+      fontSize: 15,
+      fontWeight: FontWeight.w700,
+    ),
+  );
 
   Widget _sheetChip({
     required String label,
     required bool selected,
     required VoidCallback onTap,
-  }) =>
-      GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            color: selected
-                ? AppColors.primary.withValues(alpha: 0.2)
-                : Colors.white.withValues(alpha: 0.05),
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(
-              color: selected
-                  ? AppColors.primaryBright.withValues(alpha: 0.4)
-                  : Colors.transparent,
-            ),
-          ),
-          child: Text(
-            label,
-            style: TextStyle(
-              color: selected ? AppColors.primaryBright : AppColors.textPrimary,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
+  }) => GestureDetector(
+    onTap: onTap,
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        gradient: selected
+            ? const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xAA1ED760), Color(0x66FF5A5F)],
+              )
+            : const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0x661B2420), Color(0x33202422)],
+              ),
+        boxShadow: selected
+            ? AppFx.softGlow(AppColors.primary, strength: 0.14)
+            : null,
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: AppColors.textPrimary,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
         ),
-      );
+      ),
+    ),
+  );
 }
 
 class _UseCaseData {
@@ -1486,10 +1391,36 @@ class _UseCaseData {
   final String bpmLabel;
 }
 
+class _StaticHintChip extends StatelessWidget {
+  const _StaticHintChip({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: AppColors.textPrimary,
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
 class _SearchItem {
   const _SearchItem({
     required this.title,
     required this.subtitle,
+    required this.imageAsset,
     required this.type,
     required this.bpm,
     required this.useCase,
@@ -1499,17 +1430,19 @@ class _SearchItem {
   });
 
   const _SearchItem.empty()
-      : title = '',
-        subtitle = '',
-        type = SearchResultType.artist,
-        bpm = null,
-        useCase = '',
-        mood = '',
-        durationMinutes = 0,
-        keywords = const [];
+    : title = '',
+      subtitle = '',
+      imageAsset = '',
+      type = SearchResultType.artist,
+      bpm = null,
+      useCase = '',
+      mood = '',
+      durationMinutes = 0,
+      keywords = const [];
 
   final String title;
   final String subtitle;
+  final String imageAsset;
   final SearchResultType type;
   final int? bpm;
   final String useCase;

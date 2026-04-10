@@ -1,0 +1,612 @@
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import '../controllers/spotify_remote_service.dart';
+import '../state/auth_providers.dart';
+import '../state/playlist_models.dart';
+import '../state/spotify_models.dart';
+import '../ui/theme/app_fx.dart';
+import '../ui/theme/colors.dart';
+import '../ui/widgets/media_cover.dart';
+import 'now_playing_page.dart';
+
+class PlaylistPageArgs {
+  const PlaylistPageArgs({required this.playlist, required this.userCadence});
+
+  final TempoPlaylist playlist;
+  final int userCadence;
+}
+
+class PlaylistPage extends StatefulWidget {
+  const PlaylistPage({super.key, required this.args});
+
+  final PlaylistPageArgs args;
+
+  @override
+  State<PlaylistPage> createState() => _PlaylistPageState();
+}
+
+class _PlaylistPageState extends State<PlaylistPage> {
+  bool _requestedTracks = false;
+  bool _isLaunching = false;
+
+  int get _gap => (widget.args.playlist.bpm - widget.args.userCadence).abs();
+
+  String get _fitLabel {
+    if (_gap <= 3) return 'Perfect fit';
+    if (_gap <= 8) return 'Close match';
+    return 'Off pace';
+  }
+
+  Color get _fitColor {
+    if (_gap <= 3) return AppColors.primaryBright;
+    if (_gap <= 8) return AppColors.warning;
+    return AppColors.textMuted;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_requestedTracks) return;
+    _requestedTracks = true;
+    AuthScope.read(context).loadTracksForPlaylist(widget.args.playlist.id);
+  }
+
+  Future<void> _openSpotifyUri(String spotifyUri) async {
+    if (spotifyUri.isEmpty || _isLaunching) return;
+    setState(() => _isLaunching = true);
+
+    try {
+      final remotePlayed = await SpotifyRemoteService.instance.playUri(
+        spotifyUri,
+      );
+      if (!remotePlayed) {
+        final nativeUri = Uri.parse(_nativeUriFromSpotifyUri(spotifyUri));
+        final webUri = Uri.parse(_webUrlFromSpotifyUri(spotifyUri));
+        final openedNative = await launchUrl(
+          nativeUri,
+          mode: LaunchMode.externalApplication,
+        );
+        if (!openedNative) {
+          await launchUrl(webUri, mode: LaunchMode.externalApplication);
+        }
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLaunching = false);
+      }
+    }
+  }
+
+  Future<void> _playTrack(SpotifyTrack track) async {
+    await _openSpotifyUri(track.spotifyUri);
+  }
+
+  Future<void> _startSession(List<SpotifyTrack> tracks) async {
+    final firstTrack = tracks.isNotEmpty ? tracks.first : null;
+    if (firstTrack != null) {
+      await _openSpotifyUri(firstTrack.spotifyUri);
+    } else if (widget.args.playlist.spotifyUri != null) {
+      await _openSpotifyUri(widget.args.playlist.spotifyUri!);
+    }
+
+    if (!mounted) return;
+
+    final displayTrack = firstTrack;
+    context.push(
+      '/now-playing',
+      extra: NowPlayingPageArgs(
+        trackTitle: displayTrack?.title ?? widget.args.playlist.title,
+        trackArtist:
+            displayTrack?.artistLine ??
+            '${widget.args.playlist.mood} ${widget.args.playlist.category}',
+        trackImageAsset:
+            displayTrack?.imageUrl.isNotEmpty == true
+                ? displayTrack!.imageUrl
+                : widget.args.playlist.imageAsset,
+        trackBpm: displayTrack?.bpm ?? widget.args.playlist.bpm,
+        userCadence: widget.args.userCadence,
+        spotifyUri:
+            displayTrack?.spotifyUri ?? widget.args.playlist.spotifyUri,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final playlist = widget.args.playlist;
+    final auth = AuthScope.watch(context);
+    final tracks = auth.tracksForPlaylist(playlist.id);
+    final isLoadingTracks = auth.isLoadingTracksForPlaylist(playlist.id);
+
+    return Scaffold(
+      body: SafeArea(
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: AtmosphereBackground(
+                accent: playlist.colors.last,
+                secondaryAccent: AppColors.cinemaRed,
+                child: const SizedBox.expand(),
+              ),
+            ),
+            SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      _RoundIconButton(
+                        icon: Icons.arrow_back_ios_new_rounded,
+                        onTap: () => Navigator.of(context).maybePop(),
+                      ),
+                      const Spacer(),
+                      const Text(
+                        'Playlist',
+                        style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const Spacer(),
+                      _RoundIconButton(
+                        icon: Icons.open_in_new_rounded,
+                        onTap: playlist.spotifyUri == null
+                            ? null
+                            : () => _openSpotifyUri(playlist.spotifyUri!),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  _PlaylistArtwork(playlist: playlist),
+                  const SizedBox(height: 24),
+                  Text(
+                    playlist.title,
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 32,
+                      height: 1,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    playlist.subtitle,
+                    style: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 14,
+                      height: 1.4,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  _PlaylistMeta(
+                    playlist: playlist,
+                    fitLabel: _fitLabel,
+                    fitColor: _fitColor,
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _ActionButton(
+                          label: _isLaunching ? 'Opening...' : 'Start Session',
+                          filled: true,
+                          onTap: () => _startSession(tracks),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _ActionButton(
+                          label: 'Open Playlist',
+                          onTap: playlist.spotifyUri == null
+                              ? () => context.go('/home')
+                              : () => _openSpotifyUri(playlist.spotifyUri!),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 28),
+                  _PlaylistTrackSection(
+                    tracks: tracks,
+                    isLoading: isLoadingTracks,
+                    onPlayTrack: _playTrack,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RoundIconButton extends StatelessWidget {
+  const _RoundIconButton({required this.icon, this.onTap});
+
+  final IconData icon;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Opacity(
+        opacity: onTap == null ? 0.45 : 1,
+        child: Container(
+          width: 46,
+          height: 46,
+          decoration: AppFx.glassDecoration(
+            radius: 18,
+            glowColor: AppColors.cinemaRed,
+          ),
+          child: Icon(icon, color: AppColors.textPrimary, size: 20),
+        ),
+      ),
+    );
+  }
+}
+
+class _PlaylistArtwork extends StatelessWidget {
+  const _PlaylistArtwork({required this.playlist});
+
+  final TempoPlaylist playlist;
+
+  @override
+  Widget build(BuildContext context) {
+    return AspectRatio(
+      aspectRatio: 1,
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(34),
+          boxShadow: [
+            BoxShadow(
+              color: playlist.colors.last.withValues(alpha: 0.34),
+              blurRadius: 40,
+              offset: const Offset(0, 16),
+            ),
+          ],
+        ),
+        child: MediaCover(
+          imageAsset: playlist.imageAsset,
+          size: double.infinity,
+          borderRadius: 34,
+          child: Stack(
+            children: [
+              Positioned(
+                right: 16,
+                top: 16,
+                child: Text(
+                  '${playlist.bpm} BPM',
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 18,
+                bottom: 16,
+                child: Text(
+                  '${playlist.trackCount} tracks',
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 24,
+                top: 24,
+                child: Icon(
+                  playlist.category == 'Running'
+                      ? Icons.directions_run_rounded
+                      : Icons.directions_walk_rounded,
+                  color: Colors.white.withValues(alpha: 0.18),
+                  size: 140,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PlaylistMeta extends StatelessWidget {
+  const _PlaylistMeta({
+    required this.playlist,
+    required this.fitLabel,
+    required this.fitColor,
+  });
+
+  final TempoPlaylist playlist;
+  final String fitLabel;
+  final Color fitColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return FrostedPanel(
+      radius: 26,
+      padding: const EdgeInsets.all(18),
+      glowColor: fitColor,
+      child: Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        children: [
+          _Tag(label: fitLabel, background: fitColor.withValues(alpha: 0.16)),
+          _Tag(label: playlist.category),
+          _Tag(label: playlist.mood),
+          _Tag(label: '${playlist.durationMinutes} min'),
+        ],
+      ),
+    );
+  }
+}
+
+class _PlaylistTrackSection extends StatelessWidget {
+  const _PlaylistTrackSection({
+    required this.tracks,
+    required this.isLoading,
+    required this.onPlayTrack,
+  });
+
+  final List<SpotifyTrack> tracks;
+  final bool isLoading;
+  final Future<void> Function(SpotifyTrack track) onPlayTrack;
+
+  @override
+  Widget build(BuildContext context) {
+    return FrostedPanel(
+      radius: 28,
+      padding: const EdgeInsets.all(18),
+      glowColor: AppColors.primary,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Text(
+                'Tracks',
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              Spacer(),
+              Text(
+                'Play in Spotify',
+                style: TextStyle(
+                  color: AppColors.textMuted,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          if (isLoading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Center(
+                child: CircularProgressIndicator(
+                  color: AppColors.primaryBright,
+                ),
+              ),
+            )
+          else if (tracks.isEmpty)
+            const Text(
+              'Tracks will appear here once Spotify finishes loading this playlist.',
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 13,
+                height: 1.4,
+                fontWeight: FontWeight.w600,
+              ),
+            )
+          else
+            ...tracks.take(12).map(
+              (track) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _SpotifyTrackRow(track: track, onPlay: onPlayTrack),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SpotifyTrackRow extends StatelessWidget {
+  const _SpotifyTrackRow({required this.track, required this.onPlay});
+
+  final SpotifyTrack track;
+  final Future<void> Function(SpotifyTrack track) onPlay;
+
+  @override
+  Widget build(BuildContext context) {
+    return FrostedPanel(
+      radius: 22,
+      padding: const EdgeInsets.all(12),
+      child: Row(
+        children: [
+          MediaCover(
+            imageAsset: track.imageUrl,
+            size: 58,
+            borderRadius: 16,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  track.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  track.artistLine,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                _formatDuration(track.durationMs),
+                style: const TextStyle(
+                  color: AppColors.textMuted,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              GestureDetector(
+                onTap: () => onPlay(track),
+                child: Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [AppColors.primaryBright, AppColors.primary],
+                    ),
+                    boxShadow: AppFx.softGlow(
+                      AppColors.primaryBright,
+                      strength: 0.18,
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.play_arrow_rounded,
+                    color: AppColors.textPrimary,
+                    size: 24,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Tag extends StatelessWidget {
+  const _Tag({required this.label, this.background});
+
+  final String label;
+  final Color? background;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+      decoration: BoxDecoration(
+        color: background ?? Colors.white.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: AppColors.textPrimary,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+class _ActionButton extends StatelessWidget {
+  const _ActionButton({
+    required this.label,
+    required this.onTap,
+    this.filled = false,
+  });
+
+  final String label;
+  final VoidCallback onTap;
+  final bool filled;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(999),
+          gradient: filled
+              ? const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppColors.primaryBright, AppColors.primary],
+                )
+              : const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0x661A2320), Color(0x33211B20)],
+                ),
+          boxShadow: filled
+              ? AppFx.softGlow(AppColors.primary, strength: 0.22)
+              : null,
+        ),
+        child: Center(
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+String _nativeUriFromSpotifyUri(String spotifyUri) {
+  return spotifyUri.replaceFirst('spotify:', 'spotify://');
+}
+
+String _webUrlFromSpotifyUri(String spotifyUri) {
+  final segments = spotifyUri.split(':');
+  if (segments.length >= 3) {
+    return 'https://open.spotify.com/${segments[1]}/${segments[2]}';
+  }
+  return 'https://open.spotify.com/';
+}
+
+String _formatDuration(int durationMs) {
+  final totalSeconds = (durationMs / 1000).round();
+  final minutes = totalSeconds ~/ 60;
+  final seconds = totalSeconds % 60;
+  return '$minutes:${seconds.toString().padLeft(2, '0')}';
+}

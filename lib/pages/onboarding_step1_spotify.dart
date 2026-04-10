@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../controllers/auth_controller.dart';
+import '../state/auth_providers.dart';
 import '../ui/widgets/primary_button.dart';
 import 'package:lottie/lottie.dart';
 
@@ -12,7 +14,6 @@ class OnboardingSpotify extends StatefulWidget {
 
 class _OnboardingSpotifyState extends State<OnboardingSpotify>
     with TickerProviderStateMixin {
-
   late AnimationController waveController;
   late Animation<double> slideAnim;
 
@@ -41,6 +42,10 @@ class _OnboardingSpotifyState extends State<OnboardingSpotify>
 
   @override
   Widget build(BuildContext context) {
+    final auth = AuthScope.watch(context);
+    final isConnecting = auth.status == SpotifyConnectionStatus.connecting;
+    final isConnected = auth.isConnected;
+
     return Scaffold(
       appBar: AppBar(),
       body: Padding(
@@ -102,9 +107,71 @@ class _OnboardingSpotifyState extends State<OnboardingSpotify>
 
             const SizedBox(height: 40),
 
+            if (auth.errorMessage != null) ...[
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 16),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0x22FF5A5F),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: const Color(0x44FF5A5F)),
+                ),
+                child: Text(
+                  auth.errorMessage!,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    height: 1.35,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+
+            if (isConnected) ...[
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 16),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0x221DB954),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: const Color(0x441DB954)),
+                ),
+                child: const Text(
+                  'Spotify account connected. You can continue with your real Spotify session now.',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    height: 1.35,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+
             PrimaryButton(
-              text: "Login with Spotify",
-              onPressed: () => context.push('/motion'),
+              text: isConnecting
+                  ? "Connecting to Spotify..."
+                  : (isConnected ? "Continue" : "Login with Spotify"),
+              onPressed: isConnecting
+                  ? () {}
+                  : () async {
+                      if (isConnected) {
+                        if (!mounted) return;
+                        context.push('/motion');
+                        return;
+                      }
+
+                      final authController = AuthScope.read(context);
+                      final router = GoRouter.of(context);
+                      final success =
+                          await authController.connectWithSpotifyPkce();
+
+                      if (!mounted || !success) return;
+                      router.push('/motion');
+                    },
             ),
           ],
         ),

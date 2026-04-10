@@ -1,6 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
+import '../state/mock_playlists.dart';
+import '../state/playlist_models.dart';
+import '../ui/theme/app_fx.dart';
 import '../ui/theme/colors.dart';
+import '../ui/widgets/media_cover.dart';
+import 'playlist_page.dart';
 
 enum LibraryFilter {
   all('All'),
@@ -18,151 +24,84 @@ class LibraryPage extends StatefulWidget {
   const LibraryPage({
     super.key,
     required this.userCadence,
+    this.playlists,
+    this.profileName,
   });
 
   final int userCadence;
+  final List<TempoPlaylist>? playlists;
+  final String? profileName;
 
   @override
   State<LibraryPage> createState() => _LibraryPageState();
 }
 
 class _LibraryPageState extends State<LibraryPage> {
-  static const _playlists = [
-    _LibraryPlaylist(
-      title: 'Night Tempo Walk',
-      subtitle: 'Neon city loops for locked-in evening strides',
-      bpm: 110,
-      trackCount: 24,
-      durationMinutes: 94,
-      category: 'Walking',
-      mood: 'Focused',
-      isPinned: true,
-      wasRecentlyPlayed: true,
-      colors: [Color(0xFF17363A), Color(0xFF42E07C)],
-    ),
-    _LibraryPlaylist(
-      title: 'Steady Asphalt',
-      subtitle: 'Confident BPM pockets for repeatable run days',
-      bpm: 116,
-      trackCount: 31,
-      durationMinutes: 112,
-      category: 'Running',
-      mood: 'Driven',
-      wasRecentlyPlayed: true,
-      colors: [Color(0xFF10232B), Color(0xFF6FE7F2)],
-    ),
-    _LibraryPlaylist(
-      title: 'Recovery Loop',
-      subtitle: 'Soft reset energy for easy cooldown sessions',
-      bpm: 98,
-      trackCount: 18,
-      durationMinutes: 67,
-      category: 'Walking',
-      mood: 'Calm',
-      wasRecentlyPlayed: true,
-      colors: [Color(0xFF24362B), Color(0xFF7AE38D)],
-    ),
-    _LibraryPlaylist(
-      title: 'Warm Street Start',
-      subtitle: 'A gentle ramp before the pace starts clicking',
-      bpm: 104,
-      trackCount: 20,
-      durationMinutes: 71,
-      category: 'Walking',
-      mood: 'Warm up',
-      colors: [Color(0xFF332217), Color(0xFFFFC857)],
-    ),
-    _LibraryPlaylist(
-      title: 'After Hours Tempo',
-      subtitle: 'Dark pulse and smooth momentum for late runs',
-      bpm: 121,
-      trackCount: 27,
-      durationMinutes: 101,
-      category: 'Running',
-      mood: 'Dark',
-      colors: [Color(0xFF261836), Color(0xFF6B8DFF)],
-    ),
-    _LibraryPlaylist(
-      title: 'Glass Mile',
-      subtitle: 'Polished synth edges for focused tempo work',
-      bpm: 108,
-      trackCount: 22,
-      durationMinutes: 79,
-      category: 'Running',
-      mood: 'Focused',
-      wasRecentlyPlayed: true,
-      colors: [Color(0xFF17303B), Color(0xFF59D0E3)],
-    ),
-    _LibraryPlaylist(
-      title: 'Sunday Motion',
-      subtitle: 'Easygoing picks for longer low-pressure walks',
-      bpm: 96,
-      trackCount: 16,
-      durationMinutes: 58,
-      category: 'Walking',
-      mood: 'Calm',
-      colors: [Color(0xFF243126), Color(0xFF8ACB88)],
-    ),
-  ];
-
   LibraryFilter _selectedFilter = LibraryFilter.all;
 
-  List<_LibraryPlaylist> get _filteredPlaylists {
-    final items = _playlists.where((playlist) {
-      switch (_selectedFilter) {
-        case LibraryFilter.all:
-          return true;
-        case LibraryFilter.bestMatch:
-          return _fitRating(playlist) <= 1;
-        case LibraryFilter.running:
-          return playlist.category == 'Running';
-        case LibraryFilter.walking:
-          return playlist.category == 'Walking';
-        case LibraryFilter.recentlyPlayed:
-          return playlist.wasRecentlyPlayed;
-      }
-    }).toList(growable: false);
+  List<TempoPlaylist> get _playlists =>
+      widget.playlists == null || widget.playlists!.isEmpty
+      ? mockTempoPlaylists
+      : widget.playlists!;
+
+  List<TempoPlaylist> get _filteredPlaylists {
+    final items = _playlists
+        .where((playlist) {
+          switch (_selectedFilter) {
+            case LibraryFilter.all:
+              return true;
+            case LibraryFilter.bestMatch:
+              return _fitRating(playlist) <= 1;
+            case LibraryFilter.running:
+              return playlist.category == 'Running';
+            case LibraryFilter.walking:
+              return playlist.category == 'Walking';
+            case LibraryFilter.recentlyPlayed:
+              return playlist.wasRecentlyPlayed;
+          }
+        })
+        .toList(growable: false);
 
     items.sort((a, b) {
       final fitCompare = _fitRating(a).compareTo(_fitRating(b));
       if (fitCompare != 0) return fitCompare;
       return (a.bpm - widget.userCadence).abs().compareTo(
-            (b.bpm - widget.userCadence).abs(),
-          );
+        (b.bpm - widget.userCadence).abs(),
+      );
     });
     return items;
   }
 
-  _LibraryPlaylist? get _heroPlaylist {
+  TempoPlaylist? get _heroPlaylist {
     if (_filteredPlaylists.isEmpty) return null;
-    return _filteredPlaylists.cast<_LibraryPlaylist?>().firstWhere(
-          (playlist) => playlist!.isPinned,
-          orElse: () => _filteredPlaylists.first,
-        );
+    return _filteredPlaylists.cast<TempoPlaylist?>().firstWhere(
+      (playlist) => playlist!.isPinned,
+      orElse: () => _filteredPlaylists.first,
+    );
   }
 
-  List<_LibraryPlaylist> get _mainPlaylists {
+  List<TempoPlaylist> get _mainPlaylists {
     final hero = _heroPlaylist;
     if (hero == null) return const [];
     return _filteredPlaylists
-        .where((playlist) => playlist.title != hero.title)
+        .where((playlist) => playlist.id != hero.id)
         .toList(growable: false);
   }
 
-  List<_LibraryPlaylist> get _recentlyPlayed {
+  List<TempoPlaylist> get _recentlyPlayed {
     return _filteredPlaylists
         .where((playlist) => playlist.wasRecentlyPlayed)
         .toList(growable: false);
   }
 
-  int _fitRating(_LibraryPlaylist playlist) {
+  int _fitRating(TempoPlaylist playlist) {
     final difference = (playlist.bpm - widget.userCadence).abs();
     if (difference <= 3) return 0;
     if (difference <= 8) return 1;
     return 2;
   }
 
-  String _fitLabel(_LibraryPlaylist playlist) {
+  String _fitLabel(TempoPlaylist playlist) {
     switch (_fitRating(playlist)) {
       case 0:
         return 'Perfect fit';
@@ -174,7 +113,7 @@ class _LibraryPageState extends State<LibraryPage> {
     throw StateError('Unexpected fit rating for ${playlist.title}');
   }
 
-  Color _fitColor(_LibraryPlaylist playlist) {
+  Color _fitColor(TempoPlaylist playlist) {
     switch (_fitRating(playlist)) {
       case 0:
         return AppColors.primaryBright;
@@ -186,6 +125,16 @@ class _LibraryPageState extends State<LibraryPage> {
     throw StateError('Unexpected fit color for ${playlist.title}');
   }
 
+  void _openPlaylist(TempoPlaylist playlist) {
+    context.push(
+      '/playlist',
+      extra: PlaylistPageArgs(
+        playlist: playlist,
+        userCadence: widget.userCadence,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final hero = _heroPlaylist;
@@ -195,8 +144,11 @@ class _LibraryPageState extends State<LibraryPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _LibraryHeader(userCadence: widget.userCadence),
-          const SizedBox(height: 18),
+          _LibraryHeader(
+            userCadence: widget.userCadence,
+            profileName: widget.profileName,
+          ),
+          const SizedBox(height: 22),
           SizedBox(
             height: 42,
             child: ListView.separated(
@@ -220,6 +172,7 @@ class _LibraryPageState extends State<LibraryPage> {
               playlist: hero,
               fitLabel: _fitLabel(hero),
               fitColor: _fitColor(hero),
+              onTap: () => _openPlaylist(hero),
             ),
             const SizedBox(height: 22),
             const _LibrarySectionLabel(
@@ -230,7 +183,8 @@ class _LibraryPageState extends State<LibraryPage> {
             if (_mainPlaylists.isEmpty)
               _LibraryEmptyState(
                 title: 'No playlists in this view yet',
-                message: 'Connect Spotify playlists to build your tempo library.',
+                message:
+                    'Connect Spotify playlists to build your tempo library.',
               )
             else
               LayoutBuilder(
@@ -244,6 +198,7 @@ class _LibraryPageState extends State<LibraryPage> {
                             playlist: _mainPlaylists[i],
                             fitLabel: _fitLabel(_mainPlaylists[i]),
                             fitColor: _fitColor(_mainPlaylists[i]),
+                            onTap: () => _openPlaylist(_mainPlaylists[i]),
                           ),
                           if (i != _mainPlaylists.length - 1)
                             const SizedBox(height: 12),
@@ -263,6 +218,7 @@ class _LibraryPageState extends State<LibraryPage> {
                             playlist: playlist,
                             fitLabel: _fitLabel(playlist),
                             fitColor: _fitColor(playlist),
+                            onTap: () => _openPlaylist(playlist),
                           ),
                         ),
                     ],
@@ -278,7 +234,8 @@ class _LibraryPageState extends State<LibraryPage> {
             if (_recentlyPlayed.isEmpty)
               const _LibraryEmptyState(
                 title: 'Nothing played recently',
-                message: 'Start a session from a playlist and it will show up here.',
+                message:
+                    'Start a session from a playlist and it will show up here.',
               )
             else
               SizedBox(
@@ -292,6 +249,7 @@ class _LibraryPageState extends State<LibraryPage> {
                     return _LibraryRecentCard(
                       playlist: playlist,
                       fitLabel: _fitLabel(playlist),
+                      onTap: () => _openPlaylist(playlist),
                     );
                   },
                 ),
@@ -308,9 +266,10 @@ class _LibraryPageState extends State<LibraryPage> {
 }
 
 class _LibraryHeader extends StatelessWidget {
-  const _LibraryHeader({required this.userCadence});
+  const _LibraryHeader({required this.userCadence, this.profileName});
 
   final int userCadence;
+  final String? profileName;
 
   @override
   Widget build(BuildContext context) {
@@ -330,7 +289,9 @@ class _LibraryHeader extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                'Tempo-ready playlists around $userCadence steps/min',
+                profileName == null
+                    ? 'Tempo-ready playlists around $userCadence steps/min'
+                    : '$profileName\'s playlists around $userCadence steps/min',
                 style: const TextStyle(
                   color: AppColors.textSecondary,
                   fontSize: 14,
@@ -357,12 +318,11 @@ class _LibraryIconButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 44,
-      height: 44,
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border),
+      width: 46,
+      height: 46,
+      decoration: AppFx.glassDecoration(
+        radius: 18,
+        glowColor: AppColors.cinemaRed,
       ),
       child: Icon(icon, color: AppColors.textPrimary, size: 22),
     );
@@ -390,17 +350,20 @@ class _LibraryFilterChip extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(
-            color: isSelected
-                ? AppColors.primaryBright.withValues(alpha: 0.35)
-                : AppColors.border,
-          ),
           gradient: isSelected
               ? const LinearGradient(
-                  colors: [AppColors.primary, AppColors.primaryBright],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppColors.primaryBright, AppColors.primary],
                 )
+              : const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0x661B2420), Color(0x33201F21)],
+                ),
+          boxShadow: isSelected
+              ? AppFx.softGlow(AppColors.primary, strength: 0.18)
               : null,
-          color: isSelected ? null : AppColors.surface,
         ),
         child: Text(
           label,
@@ -420,120 +383,145 @@ class _LibraryHeroCard extends StatelessWidget {
     required this.playlist,
     required this.fitLabel,
     required this.fitColor,
+    required this.onTap,
   });
 
-  final _LibraryPlaylist playlist;
+  final TempoPlaylist playlist;
   final String fitLabel;
   final Color fitColor;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(30),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            playlist.colors.first.withValues(alpha: 0.95),
-            playlist.colors.last.withValues(alpha: 0.90),
-          ],
-        ),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _LibraryCoverArt(
-            playlist: playlist,
-            size: 112,
-            borderRadius: 26,
-            icon: Icons.queue_music_rounded,
-          ),
-          const SizedBox(width: 18),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isCompact = constraints.maxWidth < 380;
+        final cover = _LibraryCoverArt(
+          playlist: playlist,
+          size: isCompact ? 96 : 112,
+          borderRadius: isCompact ? 24 : 26,
+          icon: Icons.queue_music_rounded,
+        );
+
+        final content = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Pinned for your pace',
+              style: TextStyle(
+                color: Colors.white70,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              playlist.title,
+              maxLines: isCompact ? 2 : 3,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: isCompact ? 24 : 28,
+                height: 0.98,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
-                const Text(
-                  'Pinned for your pace',
-                  style: TextStyle(
-                    color: Colors.white70,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
+                _LibraryPill(
+                  label: '${playlist.bpm} BPM',
+                  background: AppColors.background.withValues(alpha: 0.24),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  playlist.title,
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 28,
-                    height: 1,
-                    fontWeight: FontWeight.w700,
-                  ),
+                _LibraryPill(
+                  label: '${playlist.trackCount} tracks',
+                  background: AppColors.background.withValues(alpha: 0.18),
                 ),
-                const SizedBox(height: 14),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    _LibraryPill(
-                      label: '${playlist.bpm} BPM',
-                      background: AppColors.background.withValues(alpha: 0.24),
-                    ),
-                    _LibraryPill(
-                      label: '${playlist.trackCount} tracks',
-                      background: AppColors.background.withValues(alpha: 0.18),
-                    ),
-                    _LibraryPill(
-                      label: fitLabel,
-                      background: fitColor.withValues(alpha: 0.22),
-                      textColor: fitColor == AppColors.textMuted
-                          ? AppColors.textPrimary
-                          : fitColor,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 18),
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 18,
-                        vertical: 12,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.background,
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: const Text(
-                        'Start session',
-                        style: TextStyle(
-                          color: AppColors.textPrimary,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      '${playlist.durationMinutes} min of steady tempo',
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
+                _LibraryPill(
+                  label: fitLabel,
+                  background: fitColor.withValues(alpha: 0.22),
+                  textColor: fitColor == AppColors.textMuted
+                      ? AppColors.textPrimary
+                      : fitColor,
                 ),
               ],
             ),
+            const SizedBox(height: 18),
+            Wrap(
+              spacing: 12,
+              runSpacing: 10,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.background,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: const Text(
+                    'Open playlist',
+                    style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                Text(
+                  '${playlist.durationMinutes} min of steady tempo',
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        );
+
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: FrostedPanel(
+            radius: 32,
+            padding: const EdgeInsets.all(20),
+            elevated: true,
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                playlist.colors.first.withValues(alpha: 0.92),
+                playlist.colors.last.withValues(alpha: 0.84),
+                AppColors.cinemaRed.withValues(alpha: 0.18),
+              ],
+            ),
+            glowColor: playlist.colors.last,
+            child: isCompact
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      cover,
+                      const SizedBox(height: 16),
+                      content,
+                    ],
+                  )
+                : Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      cover,
+                      const SizedBox(width: 18),
+                      Expanded(child: content),
+                    ],
+                  ),
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -543,75 +531,78 @@ class _LibraryPlaylistCard extends StatelessWidget {
     required this.playlist,
     required this.fitLabel,
     required this.fitColor,
+    required this.onTap,
   });
 
-  final _LibraryPlaylist playlist;
+  final TempoPlaylist playlist;
   final String fitLabel;
   final Color fitColor;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Row(
-        children: [
-          _LibraryCoverArt(
-            playlist: playlist,
-            size: 84,
-            borderRadius: 22,
-            icon: playlist.category == 'Running'
-                ? Icons.directions_run_rounded
-                : Icons.directions_walk_rounded,
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  playlist.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    _LibraryPill(label: '${playlist.bpm} BPM'),
-                    _LibraryPill(label: playlist.category),
-                    _LibraryPill(
-                      label: fitLabel,
-                      background: fitColor.withValues(alpha: 0.14),
-                      textColor: fitColor == AppColors.textMuted
-                          ? AppColors.textPrimary
-                          : fitColor,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  '${playlist.trackCount} tracks • ${playlist.durationMinutes} min',
-                  style: const TextStyle(
-                    color: AppColors.textMuted,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: FrostedPanel(
+        radius: 26,
+        padding: const EdgeInsets.all(14),
+        glowColor: playlist.colors.last,
+        child: Row(
+          children: [
+            _LibraryCoverArt(
+              playlist: playlist,
+              size: 84,
+              borderRadius: 22,
+              icon: playlist.category == 'Running'
+                  ? Icons.directions_run_rounded
+                  : Icons.directions_walk_rounded,
             ),
-          ),
-        ],
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    playlist.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _LibraryPill(label: '${playlist.bpm} BPM'),
+                      _LibraryPill(label: playlist.category),
+                      _LibraryPill(
+                        label: fitLabel,
+                        background: fitColor.withValues(alpha: 0.14),
+                        textColor: fitColor == AppColors.textMuted
+                            ? AppColors.textPrimary
+                            : fitColor,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    '${playlist.trackCount} tracks • ${playlist.durationMinutes} min',
+                    style: const TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -621,52 +612,54 @@ class _LibraryRecentCard extends StatelessWidget {
   const _LibraryRecentCard({
     required this.playlist,
     required this.fitLabel,
+    required this.onTap,
   });
 
-  final _LibraryPlaylist playlist;
+  final TempoPlaylist playlist;
   final String fitLabel;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 168,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceRaised,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _LibraryCoverArt(
-            playlist: playlist,
-            size: 72,
-            borderRadius: 20,
-            icon: Icons.play_arrow_rounded,
-          ),
-          const Spacer(),
-          Text(
-            playlist.title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 15,
-              height: 1.1,
-              fontWeight: FontWeight.w700,
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: FrostedPanel(
+        radius: 24,
+        padding: const EdgeInsets.all(12),
+        glowColor: playlist.colors.last,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _LibraryCoverArt(
+              playlist: playlist,
+              size: 72,
+              borderRadius: 20,
+              icon: Icons.play_arrow_rounded,
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            fitLabel,
-            style: const TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
+            const Spacer(),
+            Text(
+              playlist.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 15,
+                height: 1.1,
+                fontWeight: FontWeight.w700,
+              ),
             ),
-          ),
-        ],
+            const SizedBox(height: 8),
+            Text(
+              fitLabel,
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -680,24 +673,17 @@ class _LibraryCoverArt extends StatelessWidget {
     required this.icon,
   });
 
-  final _LibraryPlaylist playlist;
+  final TempoPlaylist playlist;
   final double size;
   final double borderRadius;
   final IconData icon;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(borderRadius),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: playlist.colors,
-        ),
-      ),
+    return MediaCover(
+      imageAsset: playlist.imageAsset,
+      size: size,
+      borderRadius: borderRadius,
       child: Stack(
         children: [
           Positioned(
@@ -728,11 +714,7 @@ class _LibraryCoverArt extends StatelessWidget {
 }
 
 class _LibraryPill extends StatelessWidget {
-  const _LibraryPill({
-    required this.label,
-    this.background,
-    this.textColor,
-  });
+  const _LibraryPill({required this.label, this.background, this.textColor});
 
   final String label;
   final Color? background;
@@ -743,8 +725,11 @@ class _LibraryPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: background ?? Colors.white.withValues(alpha: 0.08),
+        color: background ?? Colors.white.withValues(alpha: 0.09),
         borderRadius: BorderRadius.circular(999),
+        boxShadow: background != null
+            ? AppFx.softGlow(textColor ?? AppColors.primary, strength: 0.08)
+            : null,
       ),
       child: Text(
         label,
@@ -759,10 +744,7 @@ class _LibraryPill extends StatelessWidget {
 }
 
 class _LibrarySectionLabel extends StatelessWidget {
-  const _LibrarySectionLabel({
-    required this.title,
-    required this.trailing,
-  });
+  const _LibrarySectionLabel({required this.title, required this.trailing});
 
   final String title;
   final String trailing;
@@ -794,24 +776,17 @@ class _LibrarySectionLabel extends StatelessWidget {
 }
 
 class _LibraryEmptyState extends StatelessWidget {
-  const _LibraryEmptyState({
-    required this.title,
-    required this.message,
-  });
+  const _LibraryEmptyState({required this.title, required this.message});
 
   final String title;
   final String message;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
+    return FrostedPanel(
+      radius: 28,
       padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(26),
-        border: Border.all(color: AppColors.border),
-      ),
+      glowColor: AppColors.cinemaRed,
       child: Column(
         children: [
           const Icon(
@@ -844,30 +819,4 @@ class _LibraryEmptyState extends StatelessWidget {
       ),
     );
   }
-}
-
-class _LibraryPlaylist {
-  const _LibraryPlaylist({
-    required this.title,
-    required this.subtitle,
-    required this.bpm,
-    required this.trackCount,
-    required this.durationMinutes,
-    required this.category,
-    required this.mood,
-    required this.colors,
-    this.isPinned = false,
-    this.wasRecentlyPlayed = false,
-  });
-
-  final String title;
-  final String subtitle;
-  final int bpm;
-  final int trackCount;
-  final int durationMinutes;
-  final String category;
-  final String mood;
-  final List<Color> colors;
-  final bool isPinned;
-  final bool wasRecentlyPlayed;
 }
