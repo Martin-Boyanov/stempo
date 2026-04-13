@@ -216,14 +216,6 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                     ),
                   ),
                   const SizedBox(height: 24),
-                  _ProgressCard(
-                    matchLabel: _matchLabel,
-                    matchColor: _matchColor,
-                    message: _matchMessage,
-                    trackBpm: _trackBpm,
-                    userCadence: widget.args.userCadence,
-                  ),
-                  const SizedBox(height: 20),
                   _PlaybackTimeline(
                     playbackPositionMs: _playbackPositionMs,
                     durationMs: _durationMs,
@@ -234,6 +226,14 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                     onTogglePlayback: _togglePlayback,
                     onSkipNext: _skipNext,
                     onSkipPrevious: _skipPrevious,
+                  ),
+                  const SizedBox(height: 24),
+                  _ProgressCard(
+                    matchLabel: _matchLabel,
+                    matchColor: _matchColor,
+                    message: _matchMessage,
+                    trackBpm: _trackBpm,
+                    userCadence: widget.args.userCadence,
                   ),
                   const SizedBox(height: 24),
                   _ActionCard(

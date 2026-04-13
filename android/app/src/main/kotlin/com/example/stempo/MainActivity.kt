@@ -47,13 +47,16 @@ class MainActivity : FlutterActivity() {
         )
     }
 
-    override fun onStop() {
-        super.onStop()
+    override fun onDestroy() {
+        super.onDestroy()
         spotifyAppRemote?.let {
             SpotifyAppRemote.disconnect(it)
             spotifyAppRemote = null
         }
     }
+
+    private var spotifyClientId: String? = null
+    private var spotifyRedirectUri: String? = null
 
     private fun handleMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
@@ -64,6 +67,8 @@ class MainActivity : FlutterActivity() {
                     result.error("invalid_args", "Spotify client ID or redirect URI is missing.", null)
                     return
                 }
+                spotifyClientId = clientId
+                spotifyRedirectUri = redirectUri
                 connectToSpotify(clientId, redirectUri, result)
             }
 
@@ -75,72 +80,59 @@ class MainActivity : FlutterActivity() {
                     result.error("invalid_args", "Missing Spotify playback arguments.", null)
                     return
                 }
+                spotifyClientId = clientId
+                spotifyRedirectUri = redirectUri
                 playUri(clientId, redirectUri, uri, result)
             }
 
             "pause" -> {
-                val remote = spotifyAppRemote
-                if (remote == null || !remote.isConnected) {
-                    result.error("not_connected", "Spotify App Remote is not connected.", null)
-                    return
-                }
-                remote.playerApi.pause().setResultCallback {
-                    result.success(true)
-                }.setErrorCallback { error ->
-                    result.error("pause_failed", error.message, null)
+                ensureConnectionAndExecute(result) { remote ->
+                    remote.playerApi.pause().setResultCallback {
+                        result.success(true)
+                    }.setErrorCallback { error ->
+                        result.error("pause_failed", error.message, null)
+                    }
                 }
             }
 
             "resume" -> {
-                val remote = spotifyAppRemote
-                if (remote == null || !remote.isConnected) {
-                    result.error("not_connected", "Spotify App Remote is not connected.", null)
-                    return
-                }
-                remote.playerApi.resume().setResultCallback {
-                    result.success(true)
-                }.setErrorCallback { error ->
-                    result.error("resume_failed", error.message, null)
+                ensureConnectionAndExecute(result) { remote ->
+                    remote.playerApi.resume().setResultCallback {
+                        result.success(true)
+                    }.setErrorCallback { error ->
+                        result.error("resume_failed", error.message, null)
+                    }
                 }
             }
 
             "skipNext" -> {
-                val remote = spotifyAppRemote
-                if (remote == null || !remote.isConnected) {
-                    result.error("not_connected", "Spotify App Remote is not connected.", null)
-                    return
-                }
-                remote.playerApi.skipNext().setResultCallback {
-                    result.success(true)
-                }.setErrorCallback { error ->
-                    result.error("skip_next_failed", error.message, null)
+                ensureConnectionAndExecute(result) { remote ->
+                    remote.playerApi.skipNext().setResultCallback {
+                        result.success(true)
+                    }.setErrorCallback { error ->
+                        result.error("skip_next_failed", error.message, null)
+                    }
                 }
             }
 
             "skipPrevious" -> {
-                val remote = spotifyAppRemote
-                if (remote == null || !remote.isConnected) {
-                    result.error("not_connected", "Spotify App Remote is not connected.", null)
-                    return
-                }
-                remote.playerApi.skipPrevious().setResultCallback {
-                    result.success(true)
-                }.setErrorCallback { error ->
-                    result.error("skip_previous_failed", error.message, null)
+                ensureConnectionAndExecute(result) { remote ->
+                    remote.playerApi.skipPrevious().setResultCallback {
+                        result.success(true)
+                    }.setErrorCallback { error ->
+                        result.error("skip_previous_failed", error.message, null)
+                    }
                 }
             }
 
             "getPlayerState" -> {
-                val remote = spotifyAppRemote
-                if (remote == null || !remote.isConnected) {
-                    result.success(null)
-                    return
-                }
-                remote.playerApi.playerState.setResultCallback { state ->
-                    result.success(playerStateToMap(state))
-                }.setErrorCallback { error ->
-                    Log.w(TAG, "getPlayerState failed: ${error.message}")
-                    result.success(null)
+                ensureConnectionAndExecute(result) { remote ->
+                    remote.playerApi.playerState.setResultCallback { state ->
+                        result.success(playerStateToMap(state))
+                    }.setErrorCallback { error ->
+                        Log.w(TAG, "getPlayerState failed: ${error.message}")
+                        result.success(null)
+                    }
                 }
             }
 
@@ -154,6 +146,41 @@ class MainActivity : FlutterActivity() {
 
             else -> result.notImplemented()
         }
+    }
+
+    private fun ensureConnectionAndExecute(
+        result: MethodChannel.Result,
+        action: (SpotifyAppRemote) -> Unit
+    ) {
+        val remote = spotifyAppRemote
+        if (remote != null && remote.isConnected) {
+            action(remote)
+            return
+        }
+
+        val clientId = spotifyClientId
+        val redirectUri = spotifyRedirectUri
+        if (clientId == null || redirectUri == null) {
+            result.error("not_connected", "Spotify App Remote is not connected and missing credentials to reconnect.", null)
+            return
+        }
+
+        val params = ConnectionParams.Builder(clientId)
+            .setRedirectUri(redirectUri)
+            .showAuthView(false)
+            .build()
+
+        SpotifyAppRemote.connect(this, params, object : Connector.ConnectionListener {
+            override fun onConnected(connectedRemote: SpotifyAppRemote) {
+                spotifyAppRemote = connectedRemote
+                subscribeToPlayerState()
+                action(connectedRemote)
+            }
+
+            override fun onFailure(throwable: Throwable) {
+                result.error("reconnect_failed", "Failed to reconnect to Spotify: ${throwable.message}", null)
+            }
+        })
     }
 
     private fun connectToSpotify(
