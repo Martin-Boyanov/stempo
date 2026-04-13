@@ -258,15 +258,15 @@ class _HomePageState extends State<HomePage>
               bottom: 0,
               child: IgnorePointer(
                 child: Container(
-                  height: 220,
+                  height: 240,
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
                       colors: [
-                        AppColors.background.withValues(alpha: 0),
-                        AppColors.background.withValues(alpha: 0.08),
-                        AppColors.background.withValues(alpha: 0.52),
+                        Colors.black.withValues(alpha: 0),
+                        Colors.black.withValues(alpha: 0.70),
+                        Colors.black,
                       ],
                     ),
                   ),
@@ -2655,16 +2655,8 @@ class _BottomNav extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FrostedPanel(
-      radius: 24,
-      blurSigma: 12,
-      padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
-      gradient: const LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [Color(0x3B161C19), Color(0x1F0F1212)],
-      ),
-      glowColor: AppColors.cinemaRed,
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
       child: Row(
         children: [
           for (var i = 0; i < items.length; i++) ...[
@@ -2750,6 +2742,7 @@ class _NowPlayingBarState extends State<_NowPlayingBar> {
   bool _isPaused = true;
   String? _actualTitle;
   String? _actualArtist;
+  String? _actualImage;
 
   @override
   void initState() {
@@ -2770,6 +2763,12 @@ class _NowPlayingBarState extends State<_NowPlayingBar> {
         _isPaused = state.isPaused;
         if (state.trackName.isNotEmpty) _actualTitle = state.trackName;
         if (state.artistName.isNotEmpty) _actualArtist = state.artistName;
+        print('SPOTIFY REMOTE NEW STATE: imageUri="${state.imageUri}" -> resolved="${state.resolvedImageUrl}"');
+        if (state.resolvedImageUrl != null) {
+          _actualImage = state.resolvedImageUrl;
+        } else if (state.imageUri != null && state.imageUri!.isNotEmpty) {
+          _actualImage = null; // fallback mapping if empty
+        }
       });
     });
 
@@ -2781,6 +2780,10 @@ class _NowPlayingBarState extends State<_NowPlayingBar> {
         _isPaused = playerState.isPaused;
         if (playerState.trackName.isNotEmpty) _actualTitle = playerState.trackName;
         if (playerState.artistName.isNotEmpty) _actualArtist = playerState.artistName;
+        print('SPOTIFY REMOTE INIT STATE: imageUri="${playerState.imageUri}" -> resolved="${playerState.resolvedImageUrl}"');
+        if (playerState.resolvedImageUrl != null) {
+          _actualImage = playerState.resolvedImageUrl;
+        }
       });
     } catch (_) {
       // Keep the bar usable even when Spotify is unavailable.
@@ -2808,7 +2811,7 @@ class _NowPlayingBarState extends State<_NowPlayingBar> {
       extra: NowPlayingPageArgs(
         trackTitle: _actualTitle ?? widget.trackTitle,
         trackArtist: _actualArtist ?? widget.trackArtist,
-        trackImageAsset: widget.trackImageAsset,
+        trackImageAsset: _actualImage ?? widget.trackImageAsset,
         trackBpm: widget.trackBpm,
         userCadence: widget.userCadence,
       ),
@@ -2820,20 +2823,13 @@ class _NowPlayingBarState extends State<_NowPlayingBar> {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: _navigateToNowPlaying,
-      child: FrostedPanel(
-        radius: 20,
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-        blurSigma: 12,
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0x3B141A18), Color(0x1F101513)], // More see-through
-        ),
-        glowColor: AppColors.primary,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+        color: Colors.transparent,
         child: Row(
           children: [
             MediaCover(
-              imageAsset: widget.trackImageAsset,
+              imageAsset: _actualImage ?? widget.trackImageAsset,
               size: 42,
               borderRadius: 10,
               child: Center(

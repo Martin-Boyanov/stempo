@@ -284,6 +284,7 @@ class MainActivity : FlutterFragmentActivity() {
             "isPaused" to state.isPaused,
             "playbackPositionMs" to state.playbackPosition,
             "durationMs" to (track?.duration ?: 0L),
+            "imageUri" to (track?.imageUri?.raw ?: "")
         )
     }
 }

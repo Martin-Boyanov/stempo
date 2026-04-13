@@ -42,6 +42,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   late String _trackArtist;
   late int _trackBpm;
   late bool _isPaused;
+  String? _actualImage;
   int _playbackPositionMs = 69000;
   int _durationMs = 198000;
 
@@ -71,6 +72,10 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
         if (state.artistName.isNotEmpty) {
           _trackArtist = state.artistName;
         }
+        print('NOW PLAYING PAGE REM: "${state.imageUri}" -> "${state.resolvedImageUrl}"');
+        if (state.resolvedImageUrl != null) {
+          _actualImage = state.resolvedImageUrl;
+        }
         _isPaused = state.isPaused;
         _playbackPositionMs = state.playbackPositionMs;
         if (state.durationMs > 0) {
@@ -89,6 +94,10 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
         }
         if (playerState.artistName.isNotEmpty) {
           _trackArtist = playerState.artistName;
+        }
+        print('NOW PLAYING PAGE INIT: "${playerState.imageUri}" -> "${playerState.resolvedImageUrl}"');
+        if (playerState.resolvedImageUrl != null) {
+          _actualImage = playerState.resolvedImageUrl;
         }
         _isPaused = playerState.isPaused;
         _playbackPositionMs = playerState.playbackPositionMs;
@@ -192,7 +201,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                   const SizedBox(height: 28),
                   _ArtworkHero(
                     trackTitle: _trackTitle,
-                    trackImageAsset: widget.args.trackImageAsset,
+                    trackImageAsset: _actualImage ?? widget.args.trackImageAsset,
                     trackBpm: _trackBpm,
                   ),
                   const SizedBox(height: 28),

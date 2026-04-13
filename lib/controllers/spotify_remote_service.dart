@@ -11,6 +11,7 @@ class SpotifyRemotePlayerState {
     required this.isPaused,
     required this.playbackPositionMs,
     required this.durationMs,
+    this.imageUri,
   });
 
   final String trackUri;
@@ -19,6 +20,7 @@ class SpotifyRemotePlayerState {
   final bool isPaused;
   final int playbackPositionMs;
   final int durationMs;
+  final String? imageUri;
 
   factory SpotifyRemotePlayerState.fromMap(Map<dynamic, dynamic> map) {
     return SpotifyRemotePlayerState(
@@ -28,7 +30,22 @@ class SpotifyRemotePlayerState {
       isPaused: map['isPaused'] as bool? ?? true,
       playbackPositionMs: (map['playbackPositionMs'] as num?)?.toInt() ?? 0,
       durationMs: (map['durationMs'] as num?)?.toInt() ?? 0,
+      imageUri: map['imageUri'] as String?,
     );
+  }
+
+  String? get resolvedImageUrl {
+    if (imageUri == null || imageUri!.isEmpty) return null;
+    final String uri = imageUri!;
+    if (uri.startsWith('http')) return uri;
+    if (uri.startsWith('spotify:image:')) {
+      final imageId = uri.substring('spotify:image:'.length);
+      return 'https://i.scdn.co/image/$imageId';
+    }
+    if (RegExp(r'^[a-zA-Z0-9]{20,}$').hasMatch(uri)) {
+      return 'https://i.scdn.co/image/$uri';
+    }
+    return null;
   }
 }
 
