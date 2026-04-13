@@ -317,6 +317,7 @@ class _HomePageState extends State<HomePage>
           state: _mockState,
           pulse: _pulseController,
           userCadence: _userCadence,
+          todaySteps: _todaySteps,
           syncGap: _syncGap,
           recentPlaylists: _recentPlaylists,
           onGoToLibrary: _goToLibraryTab,
@@ -361,6 +362,7 @@ class _HomeTabView extends StatelessWidget {
     required this.state,
     required this.pulse,
     required this.userCadence,
+    required this.todaySteps,
     required this.syncGap,
     required this.recentPlaylists,
     required this.onGoToLibrary,
@@ -371,6 +373,7 @@ class _HomeTabView extends StatelessWidget {
   final _HomeMockState state;
   final Animation<double> pulse;
   final int userCadence;
+  final int todaySteps;
   final int syncGap;
   final List<TempoPlaylist> recentPlaylists;
   final VoidCallback onGoToLibrary;
@@ -393,7 +396,11 @@ class _HomeTabView extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _DailyStepsHero(state: state, pulse: pulse),
+            _DailyStepsHero(
+              state: state,
+              pulse: pulse,
+              todaySteps: todaySteps,
+            ),
             const SizedBox(height: 14),
             const _SectionLabel(title: 'Recents', trailing: 'Jump back in'),
             const SizedBox(height: 12),
@@ -2026,14 +2033,19 @@ class _StatsFactCard extends StatelessWidget {
 }
 
 class _DailyStepsHero extends StatelessWidget {
-  const _DailyStepsHero({required this.state, required this.pulse});
+  const _DailyStepsHero({
+    required this.state,
+    required this.pulse,
+    required this.todaySteps,
+  });
 
   final _HomeMockState state;
   final Animation<double> pulse;
+  final int todaySteps;
 
   @override
   Widget build(BuildContext context) {
-    final progress = (state.stepsDone / state.goalSteps).clamp(0.0, 1.0);
+    final progress = (todaySteps / state.goalSteps).clamp(0.0, 1.0);
     final percent = (progress * 100).round();
     final progressRing = SizedBox(
       width: 150,
@@ -2092,7 +2104,7 @@ class _DailyStepsHero extends StatelessWidget {
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerLeft,
             child: Text(
-              _formatSteps(state.stepsDone),
+              _formatSteps(todaySteps),
               maxLines: 1,
               softWrap: false,
               style: TextStyle(
@@ -2122,7 +2134,7 @@ class _DailyStepsHero extends StatelessWidget {
           const SizedBox(height: 16),
           _MetricRow(
             label: 'Remaining',
-            value: _formatSteps(state.goalSteps - state.stepsDone),
+            value: _formatSteps(math.max(0, state.goalSteps - todaySteps)),
             accent: AppColors.primaryBright,
           ),
           const SizedBox(height: 12),
