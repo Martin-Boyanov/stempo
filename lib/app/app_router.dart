@@ -8,6 +8,7 @@ import '../pages/onboarding_step1_spotify.dart';
 import '../pages/onboarding_step2_motion.dart';
 import '../pages/onboarding_step3_pace.dart';
 import '../pages/playlist_page.dart';
+import '../pages/steps_page.dart';
 
 class AppRouter {
   static final GoRouter router = GoRouter(
@@ -39,10 +40,7 @@ class AppRouter {
         path: '/pace',
         builder: (context, state) => const OnboardingPace(),
       ),
-      GoRoute(
-        path: '/home',
-        builder: (context, state) => const HomePage(),
-      ),
+      GoRoute(path: '/home', builder: (context, state) => const HomePage()),
       GoRoute(
         path: '/now-playing',
         builder: (context, state) {
@@ -63,6 +61,7 @@ class AppRouter {
           return PlaylistPage(args: args);
         },
       ),
+      GoRoute(path: '/steps', builder: (context, state) => const StepsPage()),
     ],
   );
 }

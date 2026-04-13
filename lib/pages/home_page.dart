@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -6,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../state/auth_providers.dart';
 import '../state/mock_playlists.dart';
 import '../state/playlist_models.dart';
+import '../services/step_service.dart';
 import '../ui/theme/app_fx.dart';
 import '../ui/widgets/media_cover.dart';
 import 'library_page.dart';
@@ -42,8 +44,12 @@ class _HomePageState extends State<HomePage>
   );
 
   late final AnimationController _pulseController;
+  final StepService _stepService = StepService();
+  Timer? _stepsRefreshTimer;
   int _selectedTab = 0;
   int _userCadence = 108;
+  int _todaySteps = 0;
+  bool _hasStepPermission = false;
 
   List<TempoPlaylist> get _recentPlaylists {
     final auth = AuthScope.read(context);
@@ -63,6 +69,9 @@ class _HomePageState extends State<HomePage>
         ? mockTempoPlaylists
         : AuthScope.read(context).playlists,
     userCadence: _userCadence,
+    todaySteps: _todaySteps,
+    goalSteps: _mockState.goalSteps,
+    hasStepPermission: _hasStepPermission,
   );
 
   void _openPlaylist(TempoPlaylist playlist) {
@@ -170,12 +179,49 @@ class _HomePageState extends State<HomePage>
       vsync: this,
       duration: const Duration(milliseconds: 2200),
     )..repeat(reverse: true);
+    _refreshTodaySteps();
+    _stepsRefreshTimer = Timer.periodic(
+      const Duration(minutes: 1),
+      (_) => _refreshTodaySteps(silent: true),
+    );
   }
 
   @override
   void dispose() {
+    _stepsRefreshTimer?.cancel();
     _pulseController.dispose();
     super.dispose();
+  }
+
+  Future<void> _refreshTodaySteps({bool silent = false}) async {
+    try {
+      final granted = await _stepService.requestPermissions();
+      if (!mounted) return;
+      if (!granted) {
+        if (_hasStepPermission || _todaySteps != 0) {
+          setState(() {
+            _hasStepPermission = false;
+            _todaySteps = 0;
+          });
+        }
+        return;
+      }
+
+      final total = await _stepService.getTodaySteps();
+      if (!mounted) return;
+      if (!silent || total != _todaySteps || !_hasStepPermission) {
+        setState(() {
+          _hasStepPermission = true;
+          _todaySteps = total;
+        });
+      }
+    } catch (_) {
+      if (!mounted || silent) return;
+      setState(() {
+        _hasStepPermission = false;
+        _todaySteps = 0;
+      });
+    }
   }
 
   @override
@@ -347,31 +393,31 @@ class _HomeTabView extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _DailyStepsHero(state: state, pulse: pulse),
-          const SizedBox(height: 14),
-          const _SectionLabel(title: 'Recents', trailing: 'Jump back in'),
-          const SizedBox(height: 12),
-          if (recentPlaylists.isEmpty)
-            const _InlineEmptyState(
-              title: 'No recent playlists yet',
-              subtitle: 'Start a session in Library and it will show here.',
-            )
-          else
-            _JumpBackInRow(
-              items: recentPlaylists,
-              fitLabelBuilder: _fitLabel,
-              onTapPlaylist: onOpenPlaylist,
+            const SizedBox(height: 14),
+            const _SectionLabel(title: 'Recents', trailing: 'Jump back in'),
+            const SizedBox(height: 12),
+            if (recentPlaylists.isEmpty)
+              const _InlineEmptyState(
+                title: 'No recent playlists yet',
+                subtitle: 'Start a session in Library and it will show here.',
+              )
+            else
+              _JumpBackInRow(
+                items: recentPlaylists,
+                fitLabelBuilder: _fitLabel,
+                onTapPlaylist: onOpenPlaylist,
+              ),
+            const SizedBox(height: 18),
+            _StartSessionCard(
+              state: state,
+              userCadence: userCadence,
+              syncGap: syncGap,
+              onGoToLibrary: onGoToLibrary,
+              onChangeBpm: onChangeBpm,
             ),
-          const SizedBox(height: 18),
-          _StartSessionCard(
-            state: state,
-            userCadence: userCadence,
-            syncGap: syncGap,
-            onGoToLibrary: onGoToLibrary,
-            onChangeBpm: onChangeBpm,
-          ),
-        ],
+          ],
+        ),
       ),
-    ),
     );
   }
 }
@@ -475,112 +521,115 @@ class _StatsSummaryScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-          _StatsHeader(snapshot: snapshot),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: _StatsHeroCard(
-                  eyebrow: 'Average BPM',
-                  value: '${snapshot.averageBpm}',
-                  suffix: 'BPM',
-                  insight: snapshot.averageBpmInsight,
-                  accent: AppColors.primaryBright,
-                  secondaryAccent: AppColors.primary,
-                  chartValues: snapshot.weeklyBpmTrend,
+            _StatsHeader(snapshot: snapshot),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: _StatsHeroCard(
+                    eyebrow: 'Average BPM',
+                    value: '${snapshot.averageBpm}',
+                    suffix: 'BPM',
+                    insight: snapshot.averageBpmInsight,
+                    accent: AppColors.primaryBright,
+                    secondaryAccent: AppColors.primary,
+                    chartValues: snapshot.weeklyBpmTrend,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _StatsHeroCard(
-                  eyebrow: 'Favorite range',
-                  value: snapshot.favoriteRangeLabel,
-                  insight: snapshot.favoriteRangeInsight,
-                  accent: AppColors.cinemaRed,
-                  secondaryAccent: AppColors.cinemaRed,
-                  chartValues: snapshot.bpmZoneShares,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _StatsHeroCard(
+                    eyebrow: 'Favorite range',
+                    value: snapshot.favoriteRangeLabel,
+                    insight: snapshot.favoriteRangeInsight,
+                    accent: AppColors.cinemaRed,
+                    secondaryAccent: AppColors.cinemaRed,
+                    chartValues: snapshot.bpmZoneShares,
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: _StatsMiniCard(
-                  label: 'Sync quality',
-                  value: '${snapshot.syncScore}%',
-                  caption: snapshot.syncInsight,
-                  accent: AppColors.primary,
-                  icon: Icons.graphic_eq_rounded,
+              ],
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: _StatsMiniCard(
+                    label: 'Sync quality',
+                    value: '${snapshot.syncScore}%',
+                    caption: snapshot.syncInsight,
+                    accent: AppColors.primary,
+                    icon: Icons.graphic_eq_rounded,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _StatsMiniCard(
-                  label: 'Top playlist',
-                  value: snapshot.topPlaylistTitle,
-                  caption: snapshot.topPlaylistInsight,
-                  accent: AppColors.accent,
-                  icon: Icons.library_music_rounded,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _StatsMiniCard(
+                    label: 'Top playlist',
+                    value: snapshot.topPlaylistTitle,
+                    caption: snapshot.topPlaylistInsight,
+                    accent: AppColors.accent,
+                    icon: Icons.library_music_rounded,
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _StatsMiniCard(
-                  label: 'Most-played mood',
-                  value: snapshot.topMood,
-                  caption: snapshot.moodInsight,
-                  accent: AppColors.warning,
-                  icon: Icons.favorite_rounded,
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _StatsMiniCard(
+                    label: 'Most-played mood',
+                    value: snapshot.topMood,
+                    caption: snapshot.moodInsight,
+                    accent: AppColors.warning,
+                    icon: Icons.favorite_rounded,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _StatsMiniCard(
-                  label: 'Avg session',
-                  value: '${snapshot.averageSessionMinutes} min',
-                  caption: snapshot.sessionInsight,
-                  accent: AppColors.primaryBright,
-                  icon: Icons.timer_rounded,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _StatsMiniCard(
+                    label: 'Avg session',
+                    value: '${snapshot.averageSessionMinutes} min',
+                    caption: snapshot.sessionInsight,
+                    accent: AppColors.primaryBright,
+                    icon: Icons.timer_rounded,
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          const _SectionLabel(title: 'Momentum', trailing: 'Last 30 days'),
-          const SizedBox(height: 12),
-          _StatsTrendCard(snapshot: snapshot),
-          const SizedBox(height: 12),
-          _StatsDonutCard(snapshot: snapshot, height: 228, compact: false),
-          const SizedBox(height: 18),
-          const _SectionLabel(title: 'Interesting facts', trailing: 'For you'),
-          const SizedBox(height: 12),
-          GridView.count(
-            shrinkWrap: true,
-            crossAxisCount: 2,
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
-            physics: const NeverScrollableScrollPhysics(),
-            childAspectRatio: 1.02,
-            children: [
-              for (final fact in snapshot.facts)
-                _StatsFactCard(
-                  title: fact.title,
-                  value: fact.value,
-                  caption: fact.caption,
-                  accent: fact.accent,
-                  icon: fact.icon,
-                ),
-            ],
-          ),
-        ],
+              ],
+            ),
+            const SizedBox(height: 18),
+            const _SectionLabel(title: 'Momentum', trailing: 'Last 30 days'),
+            const SizedBox(height: 12),
+            _StatsTrendCard(snapshot: snapshot),
+            const SizedBox(height: 12),
+            _StatsDonutCard(snapshot: snapshot, height: 228, compact: false),
+            const SizedBox(height: 18),
+            const _SectionLabel(
+              title: 'Interesting facts',
+              trailing: 'For you',
+            ),
+            const SizedBox(height: 12),
+            GridView.count(
+              shrinkWrap: true,
+              crossAxisCount: 2,
+              mainAxisSpacing: 12,
+              crossAxisSpacing: 12,
+              physics: const NeverScrollableScrollPhysics(),
+              childAspectRatio: 1.02,
+              children: [
+                for (final fact in snapshot.facts)
+                  _StatsFactCard(
+                    title: fact.title,
+                    value: fact.value,
+                    caption: fact.caption,
+                    accent: fact.accent,
+                    icon: fact.icon,
+                  ),
+              ],
+            ),
+          ],
+        ),
       ),
-    ),
     );
   }
 }
@@ -628,8 +677,10 @@ class _StatsHeader extends StatelessWidget {
                 ),
               ),
               _HeaderStatChip(
-                label: '30 days',
-                value: '${snapshot.syncScore}%',
+                label: snapshot.hasStepPermission ? 'Today steps' : 'Sync',
+                value: snapshot.hasStepPermission
+                    ? _formatSteps(snapshot.todaySteps)
+                    : '${snapshot.syncScore}%',
                 accent: AppColors.primaryBright,
               ),
             ],
@@ -650,6 +701,12 @@ class _StatsHeader extends StatelessWidget {
               _HeaderPill(
                 label: '${snapshot.walkShare}% walk',
                 accent: AppColors.cinemaRed,
+              ),
+              _HeaderPill(
+                label: snapshot.hasStepPermission
+                    ? '${((snapshot.todaySteps / snapshot.goalSteps) * 100).round().clamp(0, 100)}% goal'
+                    : 'Health Connect',
+                accent: AppColors.warning,
               ),
             ],
           ),
@@ -2814,6 +2871,9 @@ class _ProgressRingPainter extends CustomPainter {
 
 class _StatsSnapshot {
   const _StatsSnapshot({
+    required this.todaySteps,
+    required this.goalSteps,
+    required this.hasStepPermission,
     required this.averageBpm,
     required this.favoriteRangeLabel,
     required this.averageBpmInsight,
@@ -2835,6 +2895,9 @@ class _StatsSnapshot {
     required this.facts,
   });
 
+  final int todaySteps;
+  final int goalSteps;
+  final bool hasStepPermission;
   final int averageBpm;
   final String favoriteRangeLabel;
   final String averageBpmInsight;
@@ -2899,9 +2962,13 @@ class _HomeMockState {
   final String sessionPrompt;
 }
 
+// ignore: unused_element
 _StatsSnapshot _buildStatsSnapshot({
   required List<TempoPlaylist> playlists,
   required int userCadence,
+  required int todaySteps,
+  required int goalSteps,
+  required bool hasStepPermission,
 }) {
   final recent = playlists
       .where((playlist) => playlist.wasRecentlyPlayed)
@@ -2968,12 +3035,15 @@ _StatsSnapshot _buildStatsSnapshot({
     math.min(132, averageBpm + 3),
   ];
 
-  final monthlySteps = 8420 * 24;
-  final monthlyGoal = 10000 * 30;
+  final monthlySteps = todaySteps * 30;
+  final monthlyGoal = goalSteps * 30;
   final monthlyStepProgress = (((monthlySteps / monthlyGoal) * 100).round())
       .clamp(0, 100);
 
   return _StatsSnapshot(
+    todaySteps: todaySteps,
+    goalSteps: goalSteps,
+    hasStepPermission: hasStepPermission,
     averageBpm: averageBpm,
     favoriteRangeLabel: '$favoriteStart-$favoriteEnd BPM',
     averageBpmInsight:
@@ -2997,8 +3067,9 @@ _StatsSnapshot _buildStatsSnapshot({
     weeklyBpmTrend: weeklyBpmTrend,
     bpmZoneLabels: const ['Recovery', 'Cruise', 'Push'],
     bpmZoneShares: [recoveryZone, cruiseZone, pushZone],
-    summary:
-        'Over the last 30 days you gravitated toward $averageBpm BPM, kept a $syncScore% pace match, and returned most often to ${topPlaylist.title}.',
+    summary: hasStepPermission
+        ? 'Today you are at ${_formatSteps(todaySteps)} steps, while your recent sessions gravitated toward $averageBpm BPM and a $syncScore% pace match.'
+        : 'Over the last 30 days you gravitated toward $averageBpm BPM, kept a $syncScore% pace match, and returned most often to ${topPlaylist.title}.',
     facts: [
       _StatsFact(
         title: 'Sweet spot',
@@ -3008,11 +3079,21 @@ _StatsSnapshot _buildStatsSnapshot({
         icon: Icons.multitrack_audio_rounded,
       ),
       _StatsFact(
-        title: 'Monthly steps',
-        value: _formatSteps(monthlySteps),
-        caption: '$monthlyStepProgress% of your projected monthly goal so far.',
+        title: hasStepPermission ? 'Today steps' : 'Step access',
+        value: hasStepPermission ? _formatSteps(todaySteps) : 'Connect',
+        caption: hasStepPermission
+            ? '${((todaySteps / goalSteps) * 100).round().clamp(0, 100)}% of your ${_formatSteps(goalSteps)} step goal.'
+            : 'Open the dedicated Steps page to grant Health Connect access.',
         accent: AppColors.accent,
         icon: Icons.directions_walk_rounded,
+      ),
+      _StatsFact(
+        title: 'Projected month',
+        value: _formatSteps(monthlySteps),
+        caption:
+            '$monthlyStepProgress% of your projected ${_formatSteps(monthlyGoal)} monthly goal at today’s pace.',
+        accent: AppColors.primary,
+        icon: Icons.calendar_month_rounded,
       ),
       _StatsFact(
         title: 'Fastest energy',
@@ -3028,14 +3109,6 @@ _StatsSnapshot _buildStatsSnapshot({
         caption: 'This is the playlist you are most likely to jump back into.',
         accent: AppColors.warning,
         icon: Icons.replay_rounded,
-      ),
-      _StatsFact(
-        title: 'Walk vs run',
-        value: '$walkShare% / $runShare%',
-        caption:
-            'Your month leans ${walkShare >= runShare ? 'walking' : 'running'} overall.',
-        accent: AppColors.primary,
-        icon: Icons.equalizer_rounded,
       ),
       _StatsFact(
         title: 'Dominant mood',

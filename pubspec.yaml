@@ -36,6 +36,7 @@ dependencies:
   flutter_web_auth_2: ^4.1.0
   flutter_dotenv: ^5.1.0
   url_launcher: ^6.3.1
+  health: ^11.1.1
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
