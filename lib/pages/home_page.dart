@@ -3,6 +3,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:pedometer/pedometer.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../state/auth_providers.dart';
 import '../state/mock_playlists.dart';
@@ -51,6 +53,10 @@ class _HomePageState extends State<HomePage>
   int _userCadence = 108;
   int _todaySteps = 0;
   bool _hasStepPermission = false;
+  bool _isRefreshingSteps = false;
+  StreamSubscription<StepCount>? _stepSubscription;
+  int? _initialPedometerCount;
+  int _liveAddedSteps = 0;
 
   List<TempoPlaylist> get _recentPlaylists {
     final auth = AuthScope.read(context);
@@ -70,7 +76,7 @@ class _HomePageState extends State<HomePage>
         ? mockTempoPlaylists
         : AuthScope.read(context).playlists,
     userCadence: _userCadence,
-    todaySteps: _todaySteps,
+    todaySteps: _todaySteps + _liveAddedSteps,
     goalSteps: _mockState.goalSteps,
     hasStepPermission: _hasStepPermission,
   );
@@ -181,31 +187,64 @@ class _HomePageState extends State<HomePage>
       duration: const Duration(milliseconds: 2200),
     )..repeat(reverse: true);
     _refreshTodaySteps();
+    _initLiveTracking();
     _stepsRefreshTimer = Timer.periodic(
-      const Duration(minutes: 1),
+      const Duration(seconds: 1),
       (_) => _refreshTodaySteps(silent: true),
+    );
+  }
+
+  void _initLiveTracking() async {
+    final status = await Permission.activityRecognition.request();
+    if (status != PermissionStatus.granted) {
+      debugPrint('ACTIVITY RECOGNITION PERMISSION DENIED');
+      return;
+    }
+
+    _stepSubscription = Pedometer.stepCountStream.listen(
+      (StepCount event) {
+        debugPrint('PEDOMETER EVENT: ${event.steps} steps');
+        if (!mounted) return;
+        if (_initialPedometerCount == null) {
+          _initialPedometerCount = event.steps;
+          debugPrint('PEDOMETER INITIALIZED: $_initialPedometerCount');
+          return;
+        }
+        setState(() {
+          _liveAddedSteps = event.steps - _initialPedometerCount!;
+          debugPrint('PEDOMETER LIVE ADDED: $_liveAddedSteps');
+        });
+      },
+      onError: (error) {
+        debugPrint('PEDOMETER ERROR: $error');
+      },
     );
   }
 
   @override
   void dispose() {
     _stepsRefreshTimer?.cancel();
+    _stepSubscription?.cancel();
     _pulseController.dispose();
     super.dispose();
   }
 
   Future<void> _refreshTodaySteps({bool silent = false}) async {
+    if (_isRefreshingSteps) return;
+    _isRefreshingSteps = true;
     try {
-      final granted = await _stepService.requestPermissions();
-      if (!mounted) return;
-      if (!granted) {
-        if (_hasStepPermission || _todaySteps != 0) {
-          setState(() {
-            _hasStepPermission = false;
-            _todaySteps = 0;
-          });
+      if (!_hasStepPermission || !silent) {
+        final granted = await _stepService.requestPermissions();
+        if (!mounted) return;
+        if (!granted) {
+          if (_hasStepPermission || _todaySteps != 0) {
+            setState(() {
+              _hasStepPermission = false;
+              _todaySteps = 0;
+            });
+          }
+          return;
         }
-        return;
       }
 
       final total = await _stepService.getTodaySteps();
@@ -214,6 +253,9 @@ class _HomePageState extends State<HomePage>
         setState(() {
           _hasStepPermission = true;
           _todaySteps = total;
+          // Reset live tracking offset so we don't double count
+          _initialPedometerCount = null;
+          _liveAddedSteps = 0;
         });
       }
     } catch (_) {
@@ -222,6 +264,8 @@ class _HomePageState extends State<HomePage>
         _hasStepPermission = false;
         _todaySteps = 0;
       });
+    } finally {
+      _isRefreshingSteps = false;
     }
   }
 
@@ -317,7 +361,7 @@ class _HomePageState extends State<HomePage>
           state: _mockState,
           pulse: _pulseController,
           userCadence: _userCadence,
-          todaySteps: _todaySteps,
+          todaySteps: _todaySteps + _liveAddedSteps,
           syncGap: _syncGap,
           recentPlaylists: _recentPlaylists,
           onGoToLibrary: _goToLibraryTab,
@@ -396,6 +440,28 @@ class _HomeTabView extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 8, bottom: 20),
+              child: Row(
+                children: [
+                  Image.asset(
+                    'assets/images/Logo.png',
+                    height: 38,
+                    filterQuality: FilterQuality.high,
+                  ),
+                  const SizedBox(width: 12),
+                  const Text(
+                    'STEMPO',
+                    style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 18,
+                      letterSpacing: 2,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
             _DailyStepsHero(
               state: state,
               pulse: pulse,

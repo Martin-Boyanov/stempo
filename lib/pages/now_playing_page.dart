@@ -186,13 +186,25 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                         onTap: () => Navigator.of(context).maybePop(),
                       ),
                       const Spacer(),
-                      const Text(
-                        'Now Playing',
-                        style: TextStyle(
-                          color: AppColors.textPrimary,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                        ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Image.asset(
+                            'assets/images/Logo.png',
+                            height: 20,
+                            filterQuality: FilterQuality.high,
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'STEMPO',
+                            style: TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 14,
+                              letterSpacing: 1.2,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ],
                       ),
                       const Spacer(),
                       const _TopActionButton(icon: Icons.more_horiz_rounded),

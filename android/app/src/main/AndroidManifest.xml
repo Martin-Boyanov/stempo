@@ -3,7 +3,7 @@
     <uses-permission android:name="android.permission.health.READ_STEPS" />
 
     <application
-        android:label="stempo"
+        android:label="Stempo"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
