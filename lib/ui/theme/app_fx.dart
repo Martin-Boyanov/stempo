@@ -122,6 +122,7 @@ class FrostedPanel extends StatelessWidget {
     this.gradient,
     this.glowColor,
     this.elevated = false,
+    this.blurSigma = 20,
   });
 
   final Widget child;
@@ -130,13 +131,14 @@ class FrostedPanel extends StatelessWidget {
   final Gradient? gradient;
   final Color? glowColor;
   final bool elevated;
+  final double blurSigma;
 
   @override
   Widget build(BuildContext context) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(radius),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+        filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
         child: Container(
           padding: padding,
           decoration: AppFx.glassDecoration(

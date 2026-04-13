@@ -102,18 +102,17 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   }
 
   Future<void> _togglePlayback() async {
+    final wasPaused = _isPaused;
+    setState(() => _isPaused = !wasPaused);
     try {
-      if (_isPaused) {
+      if (wasPaused) {
         await _remote.resume();
       } else {
         await _remote.pause();
       }
-      if (!mounted) return;
-      setState(() {
-        _isPaused = !_isPaused;
-      });
     } catch (_) {
-      // Leave UI as-is when Spotify App Remote is unavailable.
+      if (!mounted) return;
+      setState(() => _isPaused = wasPaused);
     }
   }
 

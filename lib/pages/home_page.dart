@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../state/auth_providers.dart';
 import '../state/mock_playlists.dart';
 import '../state/playlist_models.dart';
+import '../controllers/spotify_remote_service.dart';
 import '../services/step_service.dart';
 import '../ui/theme/app_fx.dart';
 import '../ui/widgets/media_cover.dart';
@@ -2655,12 +2656,13 @@ class _BottomNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FrostedPanel(
-      radius: 30,
-      padding: const EdgeInsets.fromLTRB(18, 10, 18, 6),
+      radius: 24,
+      blurSigma: 12,
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
       gradient: const LinearGradient(
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
-        colors: [Color(0x66161C19), Color(0x3D0F1212)],
+        colors: [Color(0x3B161C19), Color(0x1F0F1212)],
       ),
       glowColor: AppColors.cinemaRed,
       child: Row(
@@ -2673,11 +2675,11 @@ class _BottomNav extends StatelessWidget {
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 220),
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 10,
+                    horizontal: 4,
+                    vertical: 6,
                   ),
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(18),
+                    borderRadius: BorderRadius.circular(14),
                     gradient: i == selectedIndex
                         ? const LinearGradient(
                             begin: Alignment.topLeft,
@@ -2692,19 +2694,19 @@ class _BottomNav extends StatelessWidget {
                     children: [
                       Icon(
                         items[i].icon,
-                        size: 22,
+                        size: 20,
                         color: i == selectedIndex
                             ? AppColors.textPrimary
                             : AppColors.textSecondary,
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 2),
                       Text(
                         items[i].label,
                         style: TextStyle(
                           color: i == selectedIndex
                               ? AppColors.textPrimary
                               : Colors.white.withValues(alpha: 0.76),
-                          fontSize: 11,
+                          fontSize: 10,
                           fontWeight: i == selectedIndex
                               ? FontWeight.w700
                               : FontWeight.w600,
@@ -2723,7 +2725,7 @@ class _BottomNav extends StatelessWidget {
   }
 }
 
-class _NowPlayingBar extends StatelessWidget {
+class _NowPlayingBar extends StatefulWidget {
   const _NowPlayingBar({
     required this.trackTitle,
     required this.trackArtist,
@@ -2739,39 +2741,108 @@ class _NowPlayingBar extends StatelessWidget {
   final int userCadence;
 
   @override
+  State<_NowPlayingBar> createState() => _NowPlayingBarState();
+}
+
+class _NowPlayingBarState extends State<_NowPlayingBar> {
+  final SpotifyRemoteService _remote = SpotifyRemoteService.instance;
+  StreamSubscription<SpotifyRemotePlayerState>? _playerSub;
+  bool _isPaused = true;
+  String? _actualTitle;
+  String? _actualArtist;
+
+  @override
+  void initState() {
+    super.initState();
+    _bindRemote();
+  }
+
+  @override
+  void dispose() {
+    _playerSub?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _bindRemote() async {
+    _playerSub = _remote.playerStateStream().listen((state) {
+      if (!mounted) return;
+      setState(() {
+        _isPaused = state.isPaused;
+        if (state.trackName.isNotEmpty) _actualTitle = state.trackName;
+        if (state.artistName.isNotEmpty) _actualArtist = state.artistName;
+      });
+    });
+
+    try {
+      await _remote.connect(showAuthView: false);
+      final playerState = await _remote.getPlayerState();
+      if (!mounted || playerState == null) return;
+      setState(() {
+        _isPaused = playerState.isPaused;
+        if (playerState.trackName.isNotEmpty) _actualTitle = playerState.trackName;
+        if (playerState.artistName.isNotEmpty) _actualArtist = playerState.artistName;
+      });
+    } catch (_) {
+      // Keep the bar usable even when Spotify is unavailable.
+    }
+  }
+
+  Future<void> _togglePlayback() async {
+    final wasPaused = _isPaused;
+    setState(() => _isPaused = !wasPaused);
+    try {
+      if (wasPaused) {
+        await _remote.resume();
+      } else {
+        await _remote.pause();
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isPaused = wasPaused);
+    }
+  }
+
+  void _navigateToNowPlaying() {
+    context.push(
+      '/now-playing',
+      extra: NowPlayingPageArgs(
+        trackTitle: _actualTitle ?? widget.trackTitle,
+        trackArtist: _actualArtist ?? widget.trackArtist,
+        trackImageAsset: widget.trackImageAsset,
+        trackBpm: widget.trackBpm,
+        userCadence: widget.userCadence,
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () => context.push(
-        '/now-playing',
-        extra: NowPlayingPageArgs(
-          trackTitle: trackTitle,
-          trackArtist: trackArtist,
-          trackImageAsset: trackImageAsset,
-          trackBpm: trackBpm,
-          userCadence: userCadence,
-        ),
-      ),
+      onTap: _navigateToNowPlaying,
       child: FrostedPanel(
-        radius: 22,
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        radius: 20,
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+        blurSigma: 12,
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0x70141A18), Color(0x40101513)],
+          colors: [Color(0x3B141A18), Color(0x1F101513)], // More see-through
         ),
         glowColor: AppColors.primary,
         child: Row(
           children: [
             MediaCover(
-              imageAsset: trackImageAsset,
-              size: 52,
-              borderRadius: 14,
-              child: const Center(
+              imageAsset: widget.trackImageAsset,
+              size: 42,
+              borderRadius: 10,
+              child: Center(
                 child: Icon(
-                  Icons.play_arrow_rounded,
+                  _isPaused
+                      ? Icons.play_arrow_rounded
+                      : Icons.graphic_eq_rounded,
                   color: AppColors.textPrimary,
-                  size: 28,
+                  size: 22,
                 ),
               ),
             ),
@@ -2781,23 +2852,23 @@ class _NowPlayingBar extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    trackTitle,
+                    _actualTitle ?? widget.trackTitle,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: AppColors.textPrimary,
-                      fontSize: 16,
+                      fontSize: 14,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    trackArtist,
+                    _actualArtist ?? widget.trackArtist,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: AppColors.textSecondary,
-                      fontSize: 12,
+                      fontSize: 11,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -2805,16 +2876,34 @@ class _NowPlayingBar extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 12),
-            const Icon(
-              Icons.devices_rounded,
-              color: AppColors.textSecondary,
-              size: 20,
-            ),
-            const SizedBox(width: 12),
-            const Icon(
-              Icons.favorite_border_rounded,
-              color: AppColors.textSecondary,
-              size: 20,
+            // Play/Pause toggle button – intercepts taps so it
+            // doesn't trigger the whole-bar navigation.
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _togglePlayback,
+              child: Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [AppColors.primaryBright, AppColors.primary],
+                  ),
+                  boxShadow: AppFx.softGlow(
+                    AppColors.primary,
+                    strength: 0.22,
+                  ),
+                ),
+                child: Icon(
+                  _isPaused
+                      ? Icons.play_arrow_rounded
+                      : Icons.pause_rounded,
+                  color: AppColors.background,
+                  size: 26,
+                ),
+              ),
             ),
           ],
         ),
