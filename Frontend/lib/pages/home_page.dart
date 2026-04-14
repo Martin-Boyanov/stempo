@@ -204,9 +204,9 @@ class _HomePageState extends State<HomePage>
   }
 
   void _initLiveTracking() async {
-    final status = await Permission.activityRecognition.request();
+    final status = await Permission.activityRecognition.status;
     if (status != PermissionStatus.granted) {
-      debugPrint('ACTIVITY RECOGNITION PERMISSION DENIED');
+      debugPrint('ACTIVITY RECOGNITION PERMISSION NOT GRANTED');
       return;
     }
 
@@ -282,10 +282,13 @@ class _HomePageState extends State<HomePage>
   @override
   Widget build(BuildContext context) {
     final auth = AuthScope.watch(context);
-    final playlists = auth.playlists.isEmpty
-        ? mockTempoPlaylists
-        : auth.playlists;
-    final currentTrack = playlists.isNotEmpty ? playlists.first : null;
+    final playlists = auth.playlists;
+    final pinnedPlaylists = playlists
+        .where((playlist) => playlist.isPinned)
+        .toList(growable: false);
+    final recentPlaylists = playlists
+        .where((playlist) => playlist.wasRecentlyPlayed)
+        .toList(growable: false);
 
     return Scaffold(
       body: Stack(
@@ -362,21 +365,23 @@ class _HomePageState extends State<HomePage>
       case 1:
         return SearchPage(
           targetBpm: _userCadence,
-          paceRange: _preferredSearchRange,
+          paceRange: RangeValues(
+            _userCadence.toDouble() - 4,
+            _userCadence.toDouble() + 4,
+          ),
+          recentSessions: auth.playlists
+              .where((p) => p.wasRecentlyPlayed)
+              .map((p) => SearchRecentSession(
+                title: p.title,
+                subtitle: p.subtitle,
+                detail: '${p.bpm} BPM',
+                bpm: p.bpm,
+                imageAsset: p.imageAsset,
+              ))
+              .toList(),
           catalogEntries: auth.searchEntries
               .map(SearchCatalogEntry.fromSpotify)
-              .toList(growable: false),
-          recentSessions: _recentPlaylists
-              .map(
-                (playlist) => SearchRecentSession(
-                  title: playlist.title,
-                  subtitle: playlist.subtitle,
-                  detail: '${playlist.trackCount} tracks',
-                  bpm: playlist.bpm,
-                  imageAsset: playlist.imageAsset,
-                ),
-              )
-              .toList(growable: false),
+              .toList(),
         );
       case 2:
         return LibraryPage(
@@ -450,6 +455,16 @@ class _HomeTabView extends StatelessWidget {
                       letterSpacing: 2,
                       fontWeight: FontWeight.w900,
                     ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    onPressed: () => AuthScope.read(context).disconnect(),
+                    icon: const Icon(
+                      Icons.logout_rounded,
+                      color: AppColors.textPrimary,
+                      size: 20,
+                    ),
+                    tooltip: 'Logout',
                   ),
                 ],
               ),
@@ -2415,7 +2430,7 @@ class _JumpBackInRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 164,
+      height: 182,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: items.length,

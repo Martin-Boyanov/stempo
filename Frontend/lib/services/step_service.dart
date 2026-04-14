@@ -1,4 +1,5 @@
 import 'package:health/health.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class StepService {
   StepService({Health? health}) : _health = health ?? Health();
@@ -16,10 +17,20 @@ class StepService {
   }
 
   Future<bool> requestPermissions() async {
+    // 1. Request Activity Recognition (Physical Activity popup)
+    final activityStatus = await Permission.activityRecognition.request();
+    if (!activityStatus.isGranted) {
+      return false;
+    }
+
+    // 2. Request Health Connect / Health data
     await _ensureConfigured();
 
     final isAvailable = await _health.isHealthConnectAvailable();
     if (!isAvailable) {
+      // If Health Connect is not available, we can't proceed with health data
+      // but activity recognition might be enough for some? 
+      // User said "move it to after the health connect", suggesting they want both.
       return false;
     }
 
@@ -27,6 +38,7 @@ class StepService {
       _types,
       permissions: _permissions,
     );
+    
     if (hasPermissions == true) {
       return true;
     }

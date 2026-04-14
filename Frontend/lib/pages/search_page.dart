@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../state/spotify_models.dart';
 import '../state/playlist_models.dart';
+import '../state/auth_providers.dart';
 import '../ui/theme/app_fx.dart';
 import '../ui/theme/colors.dart';
 import '../ui/widgets/media_cover.dart';
@@ -57,6 +58,7 @@ class SearchRecentSession {
 
 class SearchCatalogEntry {
   const SearchCatalogEntry({
+    required this.id,
     required this.title,
     required this.subtitle,
     required this.imageUrl,
@@ -70,6 +72,7 @@ class SearchCatalogEntry {
 
   factory SearchCatalogEntry.fromSpotify(SpotifySearchEntry entry) {
     return SearchCatalogEntry(
+      id: entry.id,
       title: entry.title,
       subtitle: entry.subtitle,
       imageUrl: entry.imageUrl,
@@ -86,6 +89,7 @@ class SearchCatalogEntry {
     );
   }
 
+  final String id;
   final String title;
   final String subtitle;
   final String imageUrl;
@@ -149,6 +153,7 @@ class _SearchPageState extends State<SearchPage> {
   static const _moods = ['Focused', 'Calm', 'Driven', 'Dark', 'Euphoric'];
   static const _fallbackCatalog = [
     _SearchItem(
+      id: 'fallback-1',
       title: 'Night Tempo Walk',
       subtitle: 'For focused city walks',
       imageAsset: 'assets/images/musicCover1.webp',
@@ -160,6 +165,7 @@ class _SearchPageState extends State<SearchPage> {
       keywords: ['night', 'city', 'focus', 'walk'],
     ),
     _SearchItem(
+      id: 'fallback-2',
       title: 'Recovery Loop',
       subtitle: 'Soft reset after long days',
       imageAsset: 'assets/images/musicCover3.webp',
@@ -171,6 +177,7 @@ class _SearchPageState extends State<SearchPage> {
       keywords: ['cooldown', 'easy', 'recovery', 'reset'],
     ),
     _SearchItem(
+      id: 'fallback-3',
       title: 'Sunline Start',
       subtitle: 'Ease into your first kilometer',
       imageAsset: 'assets/images/musicCover4.webp',
@@ -182,6 +189,7 @@ class _SearchPageState extends State<SearchPage> {
       keywords: ['warm', 'start', 'easy', 'morning'],
     ),
     _SearchItem(
+      id: 'fallback-4',
       title: 'Steady Asphalt',
       subtitle: 'Locked pace for everyday runs',
       imageAsset: 'assets/images/musicCover2.webp',
@@ -193,6 +201,7 @@ class _SearchPageState extends State<SearchPage> {
       keywords: ['run', 'steady', 'tempo', 'asphalt'],
     ),
     _SearchItem(
+      id: 'fallback-5',
       title: 'Moonlit Motion',
       subtitle: 'Dark pulse for after-hours walks',
       imageAsset: 'assets/images/musicCover5.webp',
@@ -204,6 +213,7 @@ class _SearchPageState extends State<SearchPage> {
       keywords: ['night', 'dark', 'late', 'walk'],
     ),
     _SearchItem(
+      id: 'fallback-6',
       title: 'Seremise',
       subtitle: 'NITE SHIFT, Luma Cove',
       imageAsset: 'assets/images/musicCover8.webp',
@@ -215,6 +225,7 @@ class _SearchPageState extends State<SearchPage> {
       keywords: ['night', 'focus', 'city', 'steady'],
     ),
     _SearchItem(
+      id: 'fallback-7',
       title: 'Afterglow',
       subtitle: 'Evening Runner',
       imageAsset: 'assets/images/musicCover9.webp',
@@ -226,6 +237,7 @@ class _SearchPageState extends State<SearchPage> {
       keywords: ['run', 'bright', 'finish', 'push'],
     ),
     _SearchItem(
+      id: 'fallback-8',
       title: 'Mirage',
       subtitle: 'Sunset Tempo',
       imageAsset: 'assets/images/musicCover10.webp',
@@ -237,6 +249,7 @@ class _SearchPageState extends State<SearchPage> {
       keywords: ['warm', 'sunset', 'glide', 'easy'],
     ),
     _SearchItem(
+      id: 'fallback-9',
       title: 'Glass City',
       subtitle: 'Night Tempo Walk',
       imageAsset: 'assets/images/musicCover6.webp',
@@ -248,6 +261,7 @@ class _SearchPageState extends State<SearchPage> {
       keywords: ['night', 'city', 'late', 'tempo'],
     ),
     _SearchItem(
+      id: 'fallback-10',
       title: 'Halo Steps',
       subtitle: 'Dawn Arcade',
       imageAsset: 'assets/images/musicCover7.webp',
@@ -259,6 +273,7 @@ class _SearchPageState extends State<SearchPage> {
       keywords: ['recovery', 'easy', 'cooldown', 'light'],
     ),
     _SearchItem(
+      id: 'fallback-11',
       title: 'Circuit Bloom',
       subtitle: 'Pace District',
       imageAsset: 'assets/images/musicCover4.webp',
@@ -270,6 +285,7 @@ class _SearchPageState extends State<SearchPage> {
       keywords: ['focus', 'work', 'steady', 'clean'],
     ),
     _SearchItem(
+      id: 'fallback-12',
       title: 'NITE SHIFT',
       subtitle: 'Night-walk edits and steady BPM pockets',
       imageAsset: 'assets/images/musicCover8.webp',
@@ -281,6 +297,7 @@ class _SearchPageState extends State<SearchPage> {
       keywords: ['night', 'city', 'after hours'],
     ),
     _SearchItem(
+      id: 'fallback-13',
       title: 'Tempo Atlas',
       subtitle: 'Playlist-first curator for locked-in runs',
       imageAsset: 'assets/images/musicCover2.webp',
@@ -292,6 +309,7 @@ class _SearchPageState extends State<SearchPage> {
       keywords: ['tempo', 'run', 'steady', 'playlists'],
     ),
     _SearchItem(
+      id: 'fallback-14',
       title: 'Luma Cove',
       subtitle: 'Warm neon textures for focused sessions',
       imageAsset: 'assets/images/musicCover1.webp',
@@ -313,6 +331,7 @@ class _SearchPageState extends State<SearchPage> {
     return customEntries
         .map(
           (entry) => _SearchItem(
+            id: entry.id,
             title: entry.title,
             subtitle: entry.subtitle,
             imageAsset: entry.imageUrl,
@@ -477,20 +496,28 @@ class _SearchPageState extends State<SearchPage> {
     if (item.type == SearchResultType.artist) return;
 
     final playlist = TempoPlaylist(
-      id: 'search-${item.title.hashCode}',
+      id: item.id.isEmpty ? 'search-${item.title.hashCode}' : item.id,
       title: item.title,
       subtitle: item.subtitle,
       imageAsset: item.imageAsset,
       bpm: item.bpm ?? widget.targetBpm,
-      trackCount: item.durationMinutes > 0 ? (item.durationMinutes / 3).round() : 12,
+      trackCount:
+          item.durationMinutes > 0 ? (item.durationMinutes / 3).round() : 12,
       durationMinutes: item.durationMinutes,
       category: item.useCase,
       mood: item.mood,
       colors: [AppColors.primary, AppColors.primaryBright],
     );
+
+    final auth = AuthScope.read(context);
+    auth.cachePlaylist(playlist);
+
     context.push(
       '/playlist/${playlist.id}?cadence=${widget.targetBpm}',
-      extra: PlaylistPageArgs(playlist: playlist, userCadence: widget.targetBpm),
+      extra: PlaylistPageArgs(
+        playlist: playlist,
+        userCadence: widget.targetBpm,
+      ),
     );
   }
 
@@ -1127,7 +1154,7 @@ class _SearchPageState extends State<SearchPage> {
     behavior: HitTestBehavior.opaque,
     child: SizedBox(
       width: 170,
-      height: 160,
+      height: 180,
       child: FrostedPanel(
         radius: 24,
         padding: const EdgeInsets.all(12),
@@ -1481,6 +1508,7 @@ class _StaticHintChip extends StatelessWidget {
 
 class _SearchItem {
   const _SearchItem({
+    required this.id,
     required this.title,
     required this.subtitle,
     required this.imageAsset,
@@ -1493,7 +1521,8 @@ class _SearchItem {
   });
 
   const _SearchItem.empty()
-    : title = '',
+    : id = '',
+      title = '',
       subtitle = '',
       imageAsset = '',
       type = SearchResultType.artist,
@@ -1503,6 +1532,7 @@ class _SearchItem {
       durationMinutes = 0,
       keywords = const [];
 
+  final String id;
   final String title;
   final String subtitle;
   final String imageAsset;

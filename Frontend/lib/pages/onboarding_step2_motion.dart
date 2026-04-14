@@ -6,6 +6,7 @@ import 'package:flutter/rendering.dart';
 import 'package:go_router/go_router.dart';
 
 import '../ui/widgets/primary_button.dart';
+import '../services/step_service.dart';
 
 class OnboardingMotion extends StatefulWidget {
   const OnboardingMotion({super.key});
@@ -260,7 +261,26 @@ class _OnboardingMotionState extends State<OnboardingMotion>
                               Transform.scale(scale: scale, child: child),
                           child: PrimaryButton(
                             text: "Allow Motion Access",
-                            onPressed: () => context.push('/pace'),
+                            onPressed: () async {
+                              final stepService = StepService();
+                              final granted =
+                                  await stepService.requestPermissions();
+
+                              if (!context.mounted) return;
+
+                              if (granted) {
+                                context.push('/pace');
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Please allow Motion & Health access to continue.',
+                                    ),
+                                    backgroundColor: Colors.redAccent,
+                                  ),
+                                );
+                              }
+                            },
                           ),
                         ),
                         const SizedBox(height: 16),
