@@ -19,6 +19,7 @@ def _first_env(*keys: str) -> str | None:
 
 class Settings:
     def __init__(self) -> None:
+        self.spotify_api_base_url: str = os.getenv("SPOTIFY_API_BASE_URL", "https://api.spotify.com")
         self.soundcharts_base_url: str = os.getenv("SOUNDCHARTS_BASE_URL", "https://customer.api.soundcharts.com")
         self.soundcharts_app_id: str | None = _first_env("SOUNDCHARTS_APP_ID", "SOUNDCHARTS_CLIENT_ID", "CLIENT_ID")
         self.soundcharts_api_key: str | None = _first_env(
