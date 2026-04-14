@@ -125,40 +125,13 @@ class _OnboardingSpotifyState extends State<OnboardingSpotify>
                       ),
                     ),
                   ],
-                  if (isConnected) ...[
-                    Container(
-                      width: double.infinity,
-                      margin: const EdgeInsets.only(bottom: 16),
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: const Color(0x221DB954),
-                        borderRadius: BorderRadius.circular(18),
-                        border: Border.all(color: const Color(0x441DB954)),
-                      ),
-                      child: const Text(
-                        'Spotify account connected. You can continue with your real Spotify session now.',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          height: 1.35,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ],
                   PrimaryButton(
-                    text: isConnecting
+                    text: isConnecting || isConnected
                         ? "Connecting to Spotify..."
-                        : (isConnected ? "Continue" : "Login with Spotify"),
-                    onPressed: isConnecting
+                        : "Login with Spotify",
+                    onPressed: isConnecting || isConnected
                         ? () {}
                         : () async {
-                            if (isConnected) {
-                              if (!mounted) return;
-                              context.push('/motion');
-                              return;
-                            }
-
                             final authController = AuthScope.read(context);
                             final router = GoRouter.of(context);
                             final success = await authController

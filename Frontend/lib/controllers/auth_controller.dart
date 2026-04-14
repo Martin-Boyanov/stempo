@@ -45,6 +45,7 @@ class SpotifyAuthController extends ChangeNotifier {
   final Set<String> _loadingPlaylistIds = <String>{};
   bool _isLoadingData = false;
   String? _pendingVerifier;
+  bool _isHandlingCallback = false;
 
   SpotifyAuthController();
 
@@ -70,7 +71,6 @@ class SpotifyAuthController extends ChangeNotifier {
   String get _clientId => dotenv.env[_clientIdKey] ?? '';
   String get _redirectUri =>
       dotenv.env[_redirectUriKey] ?? _defaultRedirectUri;
-
   Future<bool> connectWithSpotifyPkce() async {
     final clientId = _clientId;
 
@@ -128,6 +128,16 @@ class SpotifyAuthController extends ChangeNotifier {
 
       return _exchangeAuthorizationCode(clientId: clientId, code: code, verifier: verifier);
     } catch (_) {
+      // If we are currently handling the callback via deep link,
+      // or we already connected, do not show an error here.
+      // We add a tiny delay to give the deep link router time to trigger.
+      await Future.delayed(const Duration(milliseconds: 300));
+      if (_isHandlingCallback ||
+          _status == SpotifyConnectionStatus.connected ||
+          _status == SpotifyConnectionStatus.connecting) {
+        return false;
+      }
+      
       _status = SpotifyConnectionStatus.error;
       _errorMessage = 'Spotify sign-in failed. Please try again.';
       notifyListeners();
@@ -154,15 +164,20 @@ class SpotifyAuthController extends ChangeNotifier {
       return false;
     }
 
+    _isHandlingCallback = true;
     _status = SpotifyConnectionStatus.connecting;
     _errorMessage = null;
     notifyListeners();
 
-    return _exchangeAuthorizationCode(
-      clientId: clientId,
-      code: code,
-      verifier: _pendingVerifier!,
-    );
+    try {
+      return await _exchangeAuthorizationCode(
+        clientId: clientId,
+        code: code,
+        verifier: _pendingVerifier!,
+      );
+    } finally {
+      _isHandlingCallback = false;
+    }
   }
 
   Future<bool> refreshAccessToken() async {
