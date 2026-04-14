@@ -44,6 +44,8 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   late String _trackArtist;
   late int _trackBpm;
   late bool _isPaused;
+  bool _isShuffling = false;
+  int _repeatMode = 0;
   String? _actualImage;
   int _playbackPositionMs = 69000;
   int _durationMs = 198000;
@@ -89,6 +91,8 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
         if (state.durationMs > 0) {
           _durationMs = state.durationMs;
         }
+        _isShuffling = state.isShuffling;
+        _repeatMode = state.repeatMode;
         _updatePalette();
       });
     });
@@ -113,6 +117,8 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
         if (playerState.durationMs > 0) {
           _durationMs = playerState.durationMs;
         }
+        _isShuffling = playerState.isShuffling;
+        _repeatMode = playerState.repeatMode;
         _updatePalette();
       });
     } catch (_) {
@@ -159,6 +165,29 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     try {
       await _remote.skipPrevious();
     } catch (_) {}
+  }
+
+  Future<void> _toggleShuffle() async {
+    final newShuffle = !_isShuffling;
+    setState(() => _isShuffling = newShuffle);
+    try {
+      await _remote.setShuffle(newShuffle);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isShuffling = !newShuffle);
+    }
+  }
+
+  Future<void> _toggleRepeat() async {
+    final newRepeatMode = (_repeatMode + 1) % 3;
+    final oldRepeatMode = _repeatMode;
+    setState(() => _repeatMode = newRepeatMode);
+    try {
+      await _remote.setRepeat(newRepeatMode);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _repeatMode = oldRepeatMode);
+    }
   }
 
   void _onSeekStarted(double value) {
@@ -315,9 +344,13 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                   const SizedBox(height: 18),
                   _PlaybackControls(
                     isPaused: _isPaused,
+                    isShuffling: _isShuffling,
+                    repeatMode: _repeatMode,
                     onTogglePlayback: _togglePlayback,
                     onSkipNext: _skipNext,
                     onSkipPrevious: _skipPrevious,
+                    onToggleShuffle: _toggleShuffle,
+                    onToggleRepeat: _toggleRepeat,
                   ),
                   const SizedBox(height: 24),
                   _ProgressCard(
@@ -639,25 +672,36 @@ class _PlaybackTimeline extends StatelessWidget {
 class _PlaybackControls extends StatelessWidget {
   const _PlaybackControls({
     required this.isPaused,
+    required this.isShuffling,
+    required this.repeatMode,
     required this.onTogglePlayback,
     required this.onSkipNext,
     required this.onSkipPrevious,
+    required this.onToggleShuffle,
+    required this.onToggleRepeat,
   });
 
   final bool isPaused;
+  final bool isShuffling;
+  final int repeatMode;
   final Future<void> Function() onTogglePlayback;
   final Future<void> Function() onSkipNext;
   final Future<void> Function() onSkipPrevious;
+  final Future<void> Function() onToggleShuffle;
+  final Future<void> Function() onToggleRepeat;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        const Icon(
-          Icons.shuffle_rounded,
-          color: AppColors.textSecondary,
-          size: 24,
+        GestureDetector(
+          onTap: onToggleShuffle,
+          child: Icon(
+            Icons.shuffle_rounded,
+            color: isShuffling ? AppColors.primaryBright : AppColors.textSecondary,
+            size: 24,
+          ),
         ),
         GestureDetector(
           onTap: onSkipPrevious,
@@ -679,7 +723,16 @@ class _PlaybackControls extends StatelessWidget {
             size: 36,
           ),
         ),
-        const Icon(Icons.repeat_rounded, color: AppColors.textSecondary, size: 24),
+        GestureDetector(
+          onTap: onToggleRepeat,
+          child: Icon(
+            repeatMode == 1
+                ? Icons.repeat_one_rounded
+                : Icons.repeat_rounded,
+            color: repeatMode > 0 ? AppColors.primaryBright : AppColors.textSecondary,
+            size: 24,
+          ),
+        ),
       ],
     );
   }

@@ -12,6 +12,8 @@ class SpotifyRemotePlayerState {
     required this.playbackPositionMs,
     required this.durationMs,
     this.imageUri,
+    this.isShuffling = false,
+    this.repeatMode = 0,
   });
 
   final String trackUri;
@@ -21,6 +23,8 @@ class SpotifyRemotePlayerState {
   final int playbackPositionMs;
   final int durationMs;
   final String? imageUri;
+  final bool isShuffling;
+  final int repeatMode;
 
   factory SpotifyRemotePlayerState.fromMap(Map<dynamic, dynamic> map) {
     return SpotifyRemotePlayerState(
@@ -31,6 +35,8 @@ class SpotifyRemotePlayerState {
       playbackPositionMs: (map['playbackPositionMs'] as num?)?.toInt() ?? 0,
       durationMs: (map['durationMs'] as num?)?.toInt() ?? 0,
       imageUri: map['imageUri'] as String?,
+      isShuffling: map['isShuffling'] as bool? ?? false,
+      repeatMode: (map['repeatMode'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -109,6 +115,12 @@ class SpotifyRemoteService {
 
   Future<void> seekTo(int positionMs) =>
       _methodChannel.invokeMethod<void>('seekTo', {'position': positionMs});
+
+  Future<void> setShuffle(bool shuffleState) =>
+      _methodChannel.invokeMethod<void>('setShuffle', {'shuffleState': shuffleState});
+
+  Future<void> setRepeat(int repeatMode) =>
+      _methodChannel.invokeMethod<void>('setRepeat', {'repeatMode': repeatMode});
 
   Future<void> disconnect() => _methodChannel.invokeMethod<void>('disconnect');
 

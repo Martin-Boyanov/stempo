@@ -140,6 +140,28 @@ class MainActivity : FlutterFragmentActivity() {
                 }
             }
 
+            "setShuffle" -> {
+                val shuffleState = call.argument<Boolean>("shuffleState") ?: false
+                ensureConnectionAndExecute(result) { remote ->
+                    remote.playerApi.setShuffle(shuffleState).setResultCallback {
+                        result.success(true)
+                    }.setErrorCallback { error ->
+                        result.error("shuffle_failed", error.message, null)
+                    }
+                }
+            }
+
+            "setRepeat" -> {
+                val repeatMode = call.argument<Int>("repeatMode") ?: 0
+                ensureConnectionAndExecute(result) { remote ->
+                    remote.playerApi.setRepeat(repeatMode).setResultCallback {
+                        result.success(true)
+                    }.setErrorCallback { error ->
+                        result.error("repeat_failed", error.message, null)
+                    }
+                }
+            }
+
             "getPlayerState" -> {
                 ensureConnectionAndExecute(result) { remote ->
                     remote.playerApi.playerState.setResultCallback { state ->
@@ -299,7 +321,9 @@ class MainActivity : FlutterFragmentActivity() {
             "isPaused" to state.isPaused,
             "playbackPositionMs" to state.playbackPosition,
             "durationMs" to (track?.duration ?: 0L),
-            "imageUri" to (track?.imageUri?.raw ?: "")
+            "imageUri" to (track?.imageUri?.raw ?: ""),
+            "isShuffling" to state.playbackOptions.isShuffling,
+            "repeatMode" to state.playbackOptions.repeatMode
         )
     }
 }
