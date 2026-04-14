@@ -58,6 +58,12 @@ SPOTIFY_REDIRECT_URI=stempo://spotify-callback
 
 **Important:** Register the same redirect URI scheme in platform configuration files (`AndroidManifest.xml` and `Info.plist`) to ensure OAuth callback handling works correctly.
 
+### Backend Environment Split
+
+- Root `.env` is for Flutter/frontend variables (Spotify) only.
+- Backend variables (Soundcharts + MySQL) live in `backend/.env`.
+- Use `backend/.env.example` as the template for backend secrets/config.
+
 ## Running the App
 
 ```bash
@@ -77,6 +83,10 @@ flutter run -d chrome
 ```bash
 flutter test
 ```
+
+## Backend (FastAPI)
+
+Backend implementation and setup instructions are in `backend/README.md`.
 
 ## Build
 
