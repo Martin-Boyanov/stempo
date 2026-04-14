@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -298,6 +299,7 @@ class _HomePageState extends State<HomePage>
             ),
           ),
           SafeArea(
+            bottom: false,
             child: Stack(
               fit: StackFit.expand,
               children: [
@@ -313,7 +315,7 @@ class _HomePageState extends State<HomePage>
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
                         child: _NowPlayingBar(
                           trackTitle: _playerState?.trackName ?? _mockState.trackTitle,
                           trackArtist: _playerState?.artistName ?? _mockState.trackArtist,
@@ -323,7 +325,7 @@ class _HomePageState extends State<HomePage>
                           userCadence: _userCadence,
                         ),
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 8),
                       _BottomNav(
                         items: _tabs,
                         selectedIndex: _selectedTab,
@@ -2726,9 +2728,26 @@ class _BottomNav extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
-      child: Row(
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.82),
+            border: Border(
+              top: BorderSide(
+                color: Colors.white.withValues(alpha: 0.1),
+                width: 0.5,
+              ),
+            ),
+          ),
+          padding: EdgeInsets.only(
+            left: 12,
+            right: 12,
+            top: 10,
+            bottom: MediaQuery.of(context).padding.bottom + 8,
+          ),
+          child: Row(
         children: [
           for (var i = 0; i < items.length; i++) ...[
             Expanded(
@@ -2784,7 +2803,7 @@ class _BottomNav extends StatelessWidget {
           ],
         ],
       ),
-    );
+    ),),);
   }
 }
 
@@ -2895,8 +2914,12 @@ class _NowPlayingBarState extends State<_NowPlayingBar> {
       behavior: HitTestBehavior.opaque,
       onTap: _navigateToNowPlaying,
       child: Container(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-        color: Colors.transparent,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: AppFx.glassDecoration(
+          radius: 12,
+          elevated: true,
+          glowColor: AppColors.primary.withValues(alpha: 0.1),
+        ),
         child: Row(
           children: [
             MediaCover(
