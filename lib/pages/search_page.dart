@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import '../state/spotify_models.dart';
+import '../state/playlist_models.dart';
 import '../ui/theme/app_fx.dart';
 import '../ui/theme/colors.dart';
 import '../ui/widgets/media_cover.dart';
+import 'playlist_page.dart';
 
 enum SearchResultType {
   playlist('Playlists'),
@@ -448,6 +451,47 @@ class _SearchPageState extends State<SearchPage> {
       _searchController.clear();
       _query = '';
     });
+  }
+
+  void _handleRecentSessionTap(SearchRecentSession session) {
+    final playlist = TempoPlaylist(
+      id: 'recent-${session.title.hashCode}',
+      title: session.title,
+      subtitle: session.subtitle,
+      imageAsset: session.imageAsset,
+      bpm: session.bpm,
+      trackCount: 12,
+      durationMinutes: 34,
+      category: 'Recent',
+      mood: 'Focused',
+      colors: [AppColors.primary, AppColors.primaryBright],
+      wasRecentlyPlayed: true,
+    );
+    context.push(
+      '/playlist',
+      extra: PlaylistPageArgs(playlist: playlist, userCadence: widget.targetBpm),
+    );
+  }
+
+  void _handleSearchItemTap(_SearchItem item) {
+    if (item.type == SearchResultType.artist) return;
+
+    final playlist = TempoPlaylist(
+      id: 'search-${item.title.hashCode}',
+      title: item.title,
+      subtitle: item.subtitle,
+      imageAsset: item.imageAsset,
+      bpm: item.bpm ?? widget.targetBpm,
+      trackCount: item.durationMinutes > 0 ? (item.durationMinutes / 3).round() : 12,
+      durationMinutes: item.durationMinutes,
+      category: item.useCase,
+      mood: item.mood,
+      colors: [AppColors.primary, AppColors.primaryBright],
+    );
+    context.push(
+      '/playlist',
+      extra: PlaylistPageArgs(playlist: playlist, userCadence: widget.targetBpm),
+    );
   }
 
   Future<void> _openFiltersSheet() async {
@@ -1035,166 +1079,182 @@ class _SearchPageState extends State<SearchPage> {
     ],
   );
 
-  Widget _mixedCard(_SearchItem item) => SizedBox(
-    width: 170,
-    height: 178,
+  Widget _mixedCard(_SearchItem item) => GestureDetector(
+    onTap: () => _handleSearchItemTap(item),
+    behavior: HitTestBehavior.opaque,
+    child: SizedBox(
+      width: 170,
+      height: 178,
+      child: FrostedPanel(
+        radius: 24,
+        padding: const EdgeInsets.all(12),
+        glowColor: item.type == SearchResultType.artist
+            ? AppColors.cinemaRed
+            : AppColors.primary,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _largeMediaBadge(item),
+            const Spacer(),
+            Text(
+              item.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 15,
+                height: 1.1,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              item.bpm != null ? '${item.bpm} BPM' : item.type.sectionTitle,
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  Widget _recentSessionCard(SearchRecentSession session) => GestureDetector(
+    onTap: () => _handleRecentSessionTap(session),
+    behavior: HitTestBehavior.opaque,
+    child: SizedBox(
+      width: 170,
+      height: 160,
+      child: FrostedPanel(
+        radius: 24,
+        padding: const EdgeInsets.all(12),
+        glowColor: AppColors.primary,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _recentMediaBadge(session),
+            const Spacer(),
+            Text(
+              session.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 15,
+                height: 1.1,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '${session.bpm} BPM',
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  Widget _topMatchCard(_SearchItem item) => GestureDetector(
+    onTap: () => _handleSearchItemTap(item),
+    behavior: HitTestBehavior.opaque,
+    child: FrostedPanel(
+      radius: 30,
+      padding: const EdgeInsets.all(16),
+      elevated: true,
+      glowColor: AppColors.primary,
+      child: Row(
+        children: [
+          _heroMediaBadge(item),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    if (item.bpm != null)
+                      _pill('${item.bpm} BPM', AppColors.textPrimary),
+                    _pill(
+                      item.type == SearchResultType.playlist
+                          ? 'Playlist'
+                          : 'Track',
+                      AppColors.textPrimary,
+                    ),
+                    _pill(_fitLabel(item), AppColors.primaryBright),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Widget _resultCard(_SearchItem item) => GestureDetector(
+    onTap: () => _handleSearchItemTap(item),
+    behavior: HitTestBehavior.opaque,
     child: FrostedPanel(
       radius: 24,
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       glowColor: item.type == SearchResultType.artist
           ? AppColors.cinemaRed
           : AppColors.primary,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          _largeMediaBadge(item),
-          const Spacer(),
-          Text(
-            item.title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 15,
-              height: 1.1,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            item.bpm != null ? '${item.bpm} BPM' : item.type.sectionTitle,
-            style: const TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
-
-  Widget _recentSessionCard(SearchRecentSession session) => SizedBox(
-    width: 170,
-    height: 160,
-    child: FrostedPanel(
-      radius: 24,
-      padding: const EdgeInsets.all(12),
-      glowColor: AppColors.primary,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _recentMediaBadge(session),
-          const Spacer(),
-          Text(
-            session.title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 15,
-              height: 1.1,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '${session.bpm} BPM',
-            style: const TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
-
-  Widget _topMatchCard(_SearchItem item) => FrostedPanel(
-    radius: 30,
-    padding: const EdgeInsets.all(16),
-    elevated: true,
-    glowColor: AppColors.primary,
-    child: Row(
-      children: [
-        _heroMediaBadge(item),
-        const SizedBox(width: 14),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                item.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  if (item.bpm != null)
-                    _pill('${item.bpm} BPM', AppColors.textPrimary),
-                  _pill(
-                    item.type == SearchResultType.playlist
-                        ? 'Playlist'
-                        : 'Track',
-                    AppColors.textPrimary,
+          _compactMediaBadge(item),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
                   ),
-                  _pill(_fitLabel(item), AppColors.primaryBright),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ],
-    ),
-  );
-
-  Widget _resultCard(_SearchItem item) => FrostedPanel(
-    radius: 24,
-    padding: const EdgeInsets.all(14),
-    glowColor: item.type == SearchResultType.artist
-        ? AppColors.cinemaRed
-        : AppColors.primary,
-    child: Row(
-      children: [
-        _compactMediaBadge(item),
-        const SizedBox(width: 14),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                item.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
                 ),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  if (item.bpm != null)
-                    _pill('${item.bpm} BPM', AppColors.textPrimary),
-                  _pill(_fitLabel(item), AppColors.primaryBright),
-                ],
-              ),
-            ],
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    if (item.bpm != null)
+                      _pill('${item.bpm} BPM', AppColors.textPrimary),
+                    _pill(_fitLabel(item), AppColors.primaryBright),
+                  ],
+                ),
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     ),
   );
 

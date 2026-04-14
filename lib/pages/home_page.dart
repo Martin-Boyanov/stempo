@@ -2423,17 +2423,20 @@ class _JumpBackInRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 152,
+      height: 164,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: items.length,
         separatorBuilder: (_, __) => const SizedBox(width: 12),
         itemBuilder: (context, index) {
           final item = items[index];
-          return _JumpBackCard(
-            item: item,
-            fitLabel: fitLabelBuilder(item),
-            onTap: () => onTapPlaylist(item),
+          return SizedBox(
+            width: 140,
+            child: _JumpBackCard(
+              item: item,
+              fitLabel: fitLabelBuilder(item),
+              onTap: () => onTapPlaylist(item),
+            ),
           );
         },
       ),
@@ -2494,7 +2497,7 @@ class _JumpBackCard extends StatelessWidget {
                 ],
               ),
             ),
-            const Spacer(),
+            const SizedBox(height: 12),
             Text(
               item.title,
               maxLines: 2,
