@@ -41,10 +41,7 @@ class _LibraryPageState extends State<LibraryPage> {
   String _searchQuery = '';
   bool _isSearching = false;
 
-  List<TempoPlaylist> get _playlists =>
-      widget.playlists == null || widget.playlists!.isEmpty
-      ? mockTempoPlaylists
-      : widget.playlists!;
+  List<TempoPlaylist> get _playlists => widget.playlists ?? const [];
 
   List<TempoPlaylist> get _filteredPlaylists {
     final items = _playlists
@@ -267,7 +264,7 @@ class _LibraryPageState extends State<LibraryPage> {
                     )
                   else
                     SizedBox(
-                      height: 152,
+                      height: 182,
                       child: ListView.separated(
                         scrollDirection: Axis.horizontal,
                         itemCount: _recentlyPlayed.length,

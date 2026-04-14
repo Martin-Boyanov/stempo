@@ -39,6 +39,7 @@ class SpotifyTrack {
 
 class SpotifySearchEntry {
   const SpotifySearchEntry({
+    required this.id,
     required this.title,
     required this.subtitle,
     required this.imageUrl,
@@ -50,6 +51,7 @@ class SpotifySearchEntry {
     required this.keywords,
   });
 
+  final String id;
   final String title;
   final String subtitle;
   final String imageUrl;
@@ -117,6 +119,7 @@ SpotifyTrack spotifyTrackFromJson(Map<String, dynamic> trackJson) {
 
 SpotifySearchEntry spotifyPlaylistToSearchEntry(TempoPlaylist playlist) {
   return SpotifySearchEntry(
+    id: playlist.id,
     title: playlist.title,
     subtitle: playlist.subtitle,
     imageUrl: playlist.imageAsset,

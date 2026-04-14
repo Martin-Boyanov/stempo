@@ -89,15 +89,13 @@ class AppRouter {
 
           if (id != null) {
             final auth = AuthScope.read(context);
-            try {
-              final playlist = auth.playlists.firstWhere((p) => p.id == id);
+            final playlist = auth.findPlaylistById(id);
+            if (playlist != null) {
               final cadenceStr = state.uri.queryParameters['cadence'];
               final cadence = int.tryParse(cadenceStr ?? '') ?? 110;
               return PlaylistPage(
                 args: PlaylistPageArgs(playlist: playlist, userCadence: cadence),
               );
-            } catch (_) {
-              return const HomePage();
             }
           }
 

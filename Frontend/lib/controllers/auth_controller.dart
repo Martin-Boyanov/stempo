@@ -56,6 +56,18 @@ class SpotifyAuthController extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   SpotifyUserProfile? get profile => _profile;
   List<TempoPlaylist> get playlists => _playlists;
+  final Map<String, TempoPlaylist> _playlistCache = {};
+
+  TempoPlaylist? findPlaylistById(String id) {
+    for (final p in _playlists) {
+      if (p.id == id) return p;
+    }
+    return _playlistCache[id];
+  }
+
+  void cachePlaylist(TempoPlaylist playlist) {
+    _playlistCache[playlist.id] = playlist;
+  }
   List<SpotifySearchEntry> get searchEntries => _searchEntries;
   List<SpotifyTrack> tracksForPlaylist(String playlistId) =>
       _playlistTracks[playlistId] ?? const [];
@@ -233,7 +245,7 @@ class SpotifyAuthController extends ChangeNotifier {
     }
   }
 
-  void disconnect() {
+  Future<void> disconnect() async {
     _status = SpotifyConnectionStatus.disconnected;
     _accessToken = null;
     _refreshToken = null;
@@ -245,7 +257,7 @@ class SpotifyAuthController extends ChangeNotifier {
     _playlistTracks.clear();
     _loadingPlaylistIds.clear();
     _pendingVerifier = null;
-    _clearSession();
+    await _clearSession();
     notifyListeners();
   }
 
@@ -283,6 +295,7 @@ class SpotifyAuthController extends ChangeNotifier {
     await prefs.remove('spotify_expires_at');
     await prefs.remove('last_location');
   }
+
 
   Future<bool> _exchangeAuthorizationCode({
     required String clientId,
@@ -402,12 +415,20 @@ class SpotifyAuthController extends ChangeNotifier {
       return;
     }
 
+    final cached = findPlaylistById(playlistId);
+    final realId = (playlistId.startsWith('search-') ||
+            playlistId.startsWith('recent-'))
+        ? (cached?.spotifyUri?.split(':').last ?? playlistId)
+        : playlistId;
+
+    if (realId.isEmpty) return;
+
     _loadingPlaylistIds.add(playlistId);
     notifyListeners();
 
     try {
       final json = await _getJson(
-        'https://api.spotify.com/v1/playlists/$playlistId/tracks?limit=50',
+        'https://api.spotify.com/v1/playlists/$realId/tracks?limit=50',
       );
       final items = json['items'] as List<dynamic>? ?? const [];
       final tracks = items
