@@ -38,6 +38,8 @@ class LibraryPage extends StatefulWidget {
 
 class _LibraryPageState extends State<LibraryPage> {
   LibraryFilter _selectedFilter = LibraryFilter.all;
+  String _searchQuery = '';
+  bool _isSearching = false;
 
   List<TempoPlaylist> get _playlists =>
       widget.playlists == null || widget.playlists!.isEmpty
@@ -47,6 +49,13 @@ class _LibraryPageState extends State<LibraryPage> {
   List<TempoPlaylist> get _filteredPlaylists {
     final items = _playlists
         .where((playlist) {
+          if (_searchQuery.isNotEmpty) {
+            final query = _searchQuery.toLowerCase();
+            final matches = playlist.title.toLowerCase().contains(query) ||
+                playlist.subtitle.toLowerCase().contains(query);
+            if (!matches) return false;
+          }
+
           switch (_selectedFilter) {
             case LibraryFilter.all:
               return true;
@@ -152,6 +161,12 @@ class _LibraryPageState extends State<LibraryPage> {
                 _LibraryHeader(
                   userCadence: widget.userCadence,
                   profileName: widget.profileName,
+                  isSearching: _isSearching,
+                  onSearchToggle: () => setState(() {
+                    _isSearching = !_isSearching;
+                    if (!_isSearching) _searchQuery = '';
+                  }),
+                  onSearchChanged: (val) => setState(() => _searchQuery = val),
                 ),
                 const SizedBox(height: 22),
                 SizedBox(
@@ -285,65 +300,98 @@ class _LibraryPageState extends State<LibraryPage> {
 }
 
 class _LibraryHeader extends StatelessWidget {
-  const _LibraryHeader({required this.userCadence, this.profileName});
+  const _LibraryHeader({
+    required this.userCadence,
+    this.profileName,
+    required this.isSearching,
+    required this.onSearchToggle,
+    required this.onSearchChanged,
+  });
 
   final int userCadence;
   final String? profileName;
+  final bool isSearching;
+  final VoidCallback onSearchToggle;
+  final ValueChanged<String> onSearchChanged;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Your Library',
-                style: TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 32,
-                  fontWeight: FontWeight.w700,
+          child: isSearching
+              ? TextField(
+                  autofocus: true,
+                  onChanged: onSearchChanged,
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: 'Search library...',
+                    hintStyle: TextStyle(
+                      color: AppColors.textPrimary.withOpacity(0.5),
+                      fontSize: 24,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    border: InputBorder.none,
+                  ),
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Your Library',
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 32,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      profileName == null
+                          ? 'Tempo-ready playlists around $userCadence steps/min'
+                          : '$profileName\'s playlists around $userCadence steps/min',
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                profileName == null
-                    ? 'Tempo-ready playlists around $userCadence steps/min'
-                    : '$profileName\'s playlists around $userCadence steps/min',
-                style: const TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
         ),
         const SizedBox(width: 12),
-        const _LibraryIconButton(icon: Icons.search_rounded),
-        const SizedBox(width: 8),
-        const _LibraryIconButton(icon: Icons.tune_rounded),
+        _LibraryIconButton(
+          icon: isSearching ? Icons.close_rounded : Icons.search_rounded,
+          onTap: onSearchToggle,
+        ),
       ],
     );
   }
 }
 
 class _LibraryIconButton extends StatelessWidget {
-  const _LibraryIconButton({required this.icon});
+  const _LibraryIconButton({required this.icon, this.onTap});
 
   final IconData icon;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 46,
-      height: 46,
-      decoration: AppFx.glassDecoration(
-        radius: 18,
-        glowColor: AppColors.cinemaRed,
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 46,
+        height: 46,
+        decoration: AppFx.glassDecoration(
+          radius: 18,
+          glowColor: AppColors.cinemaRed,
+        ),
+        child: Icon(icon, color: AppColors.textPrimary, size: 22),
       ),
-      child: Icon(icon, color: AppColors.textPrimary, size: 22),
     );
   }
 }
