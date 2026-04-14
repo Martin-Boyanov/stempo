@@ -3,10 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:palette_generator/palette_generator.dart';
 
-import 'package:stempo/controllers/spotify_remote_service.dart';
-import 'package:stempo/ui/theme/app_fx.dart';
-import 'package:stempo/ui/theme/colors.dart';
-import 'package:stempo/ui/widgets/media_cover.dart';
+import '../controllers/spotify_remote_service.dart';
+import '../ui/theme/app_fx.dart';
+import '../ui/theme/colors.dart';
+import '../ui/widgets/media_cover.dart';
 
 class NowPlayingPageArgs {
   const NowPlayingPageArgs({

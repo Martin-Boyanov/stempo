@@ -468,7 +468,7 @@ class _SearchPageState extends State<SearchPage> {
       wasRecentlyPlayed: true,
     );
     context.push(
-      '/playlist',
+      '/playlist/${playlist.id}?cadence=${widget.targetBpm}',
       extra: PlaylistPageArgs(playlist: playlist, userCadence: widget.targetBpm),
     );
   }
@@ -489,7 +489,7 @@ class _SearchPageState extends State<SearchPage> {
       colors: [AppColors.primary, AppColors.primaryBright],
     );
     context.push(
-      '/playlist',
+      '/playlist/${playlist.id}?cadence=${widget.targetBpm}',
       extra: PlaylistPageArgs(playlist: playlist, userCadence: widget.targetBpm),
     );
   }

@@ -127,7 +127,7 @@ class _LibraryPageState extends State<LibraryPage> {
 
   void _openPlaylist(TempoPlaylist playlist) {
     context.push(
-      '/playlist',
+      '/playlist/${playlist.id}?cadence=${widget.userCadence}',
       extra: PlaylistPageArgs(
         playlist: playlist,
         userCadence: widget.userCadence,

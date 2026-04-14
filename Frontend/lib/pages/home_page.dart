@@ -7,14 +7,14 @@ import 'package:go_router/go_router.dart';
 import 'package:pedometer/pedometer.dart';
 import 'package:permission_handler/permission_handler.dart';
 
-import 'package:stempo/state/auth_providers.dart';
-import 'package:stempo/state/mock_playlists.dart';
-import 'package:stempo/state/playlist_models.dart';
-import 'package:stempo/controllers/auth_controller.dart';
-import 'package:stempo/controllers/spotify_remote_service.dart';
-import 'package:stempo/services/step_service.dart';
-import 'package:stempo/ui/theme/app_fx.dart';
-import 'package:stempo/ui/widgets/media_cover.dart';
+import '../state/auth_providers.dart';
+import '../state/mock_playlists.dart';
+import '../state/playlist_models.dart';
+import '../controllers/auth_controller.dart';
+import '../controllers/spotify_remote_service.dart';
+import '../services/step_service.dart';
+import '../ui/theme/app_fx.dart';
+import '../ui/widgets/media_cover.dart';
 import 'library_page.dart';
 import 'now_playing_page.dart';
 import 'playlist_page.dart';
@@ -85,7 +85,7 @@ class _HomePageState extends State<HomePage>
 
   void _openPlaylist(TempoPlaylist playlist) {
     context.push(
-      '/playlist',
+      '/playlist/${playlist.id}?cadence=$_userCadence',
       extra: PlaylistPageArgs(playlist: playlist, userCadence: _userCadence),
     );
   }
@@ -357,7 +357,7 @@ class _HomePageState extends State<HomePage>
           recentPlaylists: playlists,
           onGoToLibrary: _goToLibraryTab,
           onChangeBpm: _openBpmPicker,
-          onOpenPlaylist: (p) => context.push('/playlist', extra: p),
+          onOpenPlaylist: _openPlaylist,
         );
       case 1:
         return SearchPage(

@@ -7,6 +7,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../state/playlist_models.dart';
 import '../state/spotify_models.dart';
@@ -44,6 +45,8 @@ class SpotifyAuthController extends ChangeNotifier {
   final Set<String> _loadingPlaylistIds = <String>{};
   bool _isLoadingData = false;
   String? _pendingVerifier;
+
+  SpotifyAuthController();
 
   SpotifyConnectionStatus get status => _status;
   String? get accessToken => _accessToken;
@@ -227,7 +230,43 @@ class SpotifyAuthController extends ChangeNotifier {
     _playlistTracks.clear();
     _loadingPlaylistIds.clear();
     _pendingVerifier = null;
+    _clearSession();
     notifyListeners();
+  }
+
+  Future<void> _saveSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (_accessToken != null) await prefs.setString('spotify_access_token', _accessToken!);
+    if (_refreshToken != null) await prefs.setString('spotify_refresh_token', _refreshToken!);
+    if (_expiresAt != null) {
+      await prefs.setString('spotify_expires_at', _expiresAt!.toIso8601String());
+    }
+  }
+
+  Future<void> initialize() async {
+    final prefs = await SharedPreferences.getInstance();
+    _accessToken = prefs.getString('spotify_access_token');
+    _refreshToken = prefs.getString('spotify_refresh_token');
+    final expiresAtStr = prefs.getString('spotify_expires_at');
+    if (expiresAtStr != null) {
+      _expiresAt = DateTime.parse(expiresAtStr);
+    }
+
+    if (_accessToken != null && _expiresAt != null && _expiresAt!.isAfter(DateTime.now())) {
+      _status = SpotifyConnectionStatus.connected;
+      unawaited(loadUserData());
+    } else if (_refreshToken != null) {
+      await refreshAccessToken();
+    }
+    notifyListeners();
+  }
+
+  Future<void> _clearSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('spotify_access_token');
+    await prefs.remove('spotify_refresh_token');
+    await prefs.remove('spotify_expires_at');
+    await prefs.remove('last_location');
   }
 
   Future<bool> _exchangeAuthorizationCode({
@@ -310,6 +349,7 @@ class SpotifyAuthController extends ChangeNotifier {
         : null;
     notifyListeners();
     if (_status == SpotifyConnectionStatus.connected) {
+      unawaited(_saveSession());
       unawaited(loadUserData());
     }
     return _status == SpotifyConnectionStatus.connected;

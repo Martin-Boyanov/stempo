@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../state/auth_providers.dart';
+import '../controllers/auth_controller.dart';
 import '../pages/home_page.dart';
 import '../pages/now_playing_page.dart';
 import '../pages/onboarding_step1_spotify.dart';
@@ -11,13 +13,37 @@ import '../pages/playlist_page.dart';
 import '../pages/steps_page.dart';
 
 class AppRouter {
-  static final GoRouter router = GoRouter(
-    redirect: (context, state) {
+  static GoRouter createRouter(SpotifyAuthController auth) => GoRouter(
+    refreshListenable: auth,
+    redirect: (context, state) async {
       final uri = state.uri;
       if (uri.scheme == 'stempo' && uri.host == 'spotify-callback') {
         final query = uri.query.isEmpty ? '' : '?${uri.query}';
         return '/spotify-callback$query';
       }
+
+      final auth = AuthScope.read(context);
+      final isAtStart = state.matchedLocation == '/' || state.matchedLocation == '/spotify';
+      
+      // If we are at the start and already connected, try to go to last location
+      if (isAtStart && auth.isConnected) {
+        final prefs = await SharedPreferences.getInstance();
+        final lastLoc = prefs.getString('last_location');
+        if (lastLoc != null && lastLoc != '/spotify' && lastLoc != '/') {
+          return lastLoc;
+        }
+        return '/home';
+      }
+
+      // Save current location if it's not a start/callback screen
+      final isTransitionScreen = state.matchedLocation == '/' || 
+                               state.matchedLocation == '/spotify' || 
+                               state.matchedLocation == '/spotify-callback';
+      if (!isTransitionScreen) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('last_location', state.matchedLocation);
+      }
+
       if (state.matchedLocation == '/') return '/spotify';
       return null;
     },
@@ -52,13 +78,30 @@ class AppRouter {
         },
       ),
       GoRoute(
-        path: '/playlist',
+        path: '/playlist/:id',
         builder: (context, state) {
+          final id = state.pathParameters['id'];
           final args = state.extra;
-          if (args is! PlaylistPageArgs) {
-            return const HomePage();
+
+          if (args is PlaylistPageArgs) {
+            return PlaylistPage(args: args);
           }
-          return PlaylistPage(args: args);
+
+          if (id != null) {
+            final auth = AuthScope.read(context);
+            try {
+              final playlist = auth.playlists.firstWhere((p) => p.id == id);
+              final cadenceStr = state.uri.queryParameters['cadence'];
+              final cadence = int.tryParse(cadenceStr ?? '') ?? 110;
+              return PlaylistPage(
+                args: PlaylistPageArgs(playlist: playlist, userCadence: cadence),
+              );
+            } catch (_) {
+              return const HomePage();
+            }
+          }
+
+          return const HomePage();
         },
       ),
       GoRoute(path: '/steps', builder: (context, state) => const StepsPage()),
