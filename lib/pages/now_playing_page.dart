@@ -6,6 +6,7 @@ import '../controllers/spotify_remote_service.dart';
 import '../ui/theme/app_fx.dart';
 import '../ui/theme/colors.dart';
 import '../ui/widgets/media_cover.dart';
+import 'package:palette_generator/palette_generator.dart';
 
 class NowPlayingPageArgs {
   const NowPlayingPageArgs({
@@ -45,6 +46,8 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   String? _actualImage;
   int _playbackPositionMs = 69000;
   int _durationMs = 198000;
+  Color _accentColor = AppColors.primary;
+  Color _secondaryColor = AppColors.cinemaRed;
 
   @override
   void initState() {
@@ -54,6 +57,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     _trackBpm = widget.args.trackBpm;
     _isPaused = false;
     _bindSpotifyRemote();
+    _updatePalette();
   }
 
   @override
@@ -81,6 +85,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
         if (state.durationMs > 0) {
           _durationMs = state.durationMs;
         }
+        _updatePalette();
       });
     });
 
@@ -104,6 +109,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
         if (playerState.durationMs > 0) {
           _durationMs = playerState.durationMs;
         }
+        _updatePalette();
       });
     } catch (_) {
       // Keep the screen usable even when the remote player is unavailable.
@@ -137,6 +143,32 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     } catch (_) {}
   }
 
+  Future<void> _updatePalette() async {
+    final imagePath = _actualImage ?? widget.args.trackImageAsset;
+    if (imagePath.isEmpty) return;
+
+    final imageProvider = imagePath.startsWith('http')
+        ? NetworkImage(imagePath)
+        : AssetImage(imagePath) as ImageProvider;
+
+    try {
+      final palette = await PaletteGenerator.fromImageProvider(
+        imageProvider,
+        maximumColorCount: 20,
+      );
+      if (!mounted) return;
+      if (palette.dominantColor != null) {
+        setState(() {
+          _accentColor = palette.dominantColor!.color;
+          _secondaryColor = palette.vibrantColor?.color ?? 
+                           palette.lightVibrantColor?.color ?? 
+                           palette.mutedColor?.color ?? 
+                           AppColors.cinemaRed;
+        });
+      }
+    } catch (_) {}
+  }
+
   int get _cadenceGap => (widget.args.trackBpm - widget.args.userCadence).abs();
 
   String get _matchLabel {
@@ -164,17 +196,17 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SafeArea(
-        child: Stack(
-          children: [
-            const Positioned.fill(
-              child: AtmosphereBackground(
-                accent: AppColors.primary,
-                secondaryAccent: AppColors.cinemaRed,
-                child: SizedBox.expand(),
-              ),
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: AtmosphereBackground(
+              accent: _accentColor,
+              secondaryAccent: _secondaryColor,
+              child: const SizedBox.expand(),
             ),
-            SingleChildScrollView(
+          ),
+          SafeArea(
+            child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -207,7 +239,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                         ],
                       ),
                       const Spacer(),
-                      const _TopActionButton(icon: Icons.more_horiz_rounded),
+                      const SizedBox(width: 46),
                     ],
                   ),
                   const SizedBox(height: 28),
@@ -264,8 +296,8 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                 ],
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

@@ -6,13 +6,14 @@ import 'package:go_router/go_router.dart';
 import 'package:pedometer/pedometer.dart';
 import 'package:permission_handler/permission_handler.dart';
 
-import '../state/auth_providers.dart';
-import '../state/mock_playlists.dart';
-import '../state/playlist_models.dart';
-import '../controllers/spotify_remote_service.dart';
-import '../services/step_service.dart';
-import '../ui/theme/app_fx.dart';
-import '../ui/widgets/media_cover.dart';
+import 'package:stempo/state/auth_providers.dart';
+import 'package:stempo/state/mock_playlists.dart';
+import 'package:stempo/state/playlist_models.dart';
+import 'package:stempo/controllers/auth_controller.dart';
+import 'package:stempo/controllers/spotify_remote_service.dart';
+import 'package:stempo/services/step_service.dart';
+import 'package:stempo/ui/theme/app_fx.dart';
+import 'package:stempo/ui/widgets/media_cover.dart';
 import 'library_page.dart';
 import 'now_playing_page.dart';
 import 'playlist_page.dart';
@@ -179,6 +180,9 @@ class _HomePageState extends State<HomePage>
     }
   }
 
+  StreamSubscription<SpotifyRemotePlayerState>? _playerSubscription;
+  SpotifyRemotePlayerState? _playerState;
+
   @override
   void initState() {
     super.initState();
@@ -192,6 +196,10 @@ class _HomePageState extends State<HomePage>
       const Duration(seconds: 1),
       (_) => _refreshTodaySteps(silent: true),
     );
+    _playerSubscription =
+        SpotifyRemoteService.instance.playerStateStream().listen((state) {
+      if (mounted) setState(() => _playerState = state);
+    });
   }
 
   void _initLiveTracking() async {
@@ -225,6 +233,7 @@ class _HomePageState extends State<HomePage>
   void dispose() {
     _stepsRefreshTimer?.cancel();
     _stepSubscription?.cancel();
+    _playerSubscription?.cancel();
     _pulseController.dispose();
     super.dispose();
   }
@@ -278,95 +287,75 @@ class _HomePageState extends State<HomePage>
     final currentTrack = playlists.isNotEmpty ? playlists.first : null;
 
     return Scaffold(
-      body: SafeArea(
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            const Positioned.fill(
-              child: AtmosphereBackground(
-                accent: AppColors.primary,
-                secondaryAccent: AppColors.cinemaRed,
-                child: SizedBox.expand(),
-              ),
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          const Positioned.fill(
+            child: AtmosphereBackground(
+              accent: AppColors.primary,
+              secondaryAccent: AppColors.cinemaRed,
+              child: SizedBox.expand(),
             ),
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 220),
-              child: KeyedSubtree(
-                key: ValueKey(_selectedTab),
-                child: _buildSelectedTabBody(),
-              ),
-            ),
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: IgnorePointer(
-                child: Container(
-                  height: 240,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.black.withValues(alpha: 0),
-                        Colors.black.withValues(alpha: 0.70),
-                        Colors.black,
-                      ],
-                    ),
+          ),
+          SafeArea(
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 320),
+                  child: _buildSelectedTabBody(auth),
+                ),
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: _NowPlayingBar(
+                          trackTitle: _playerState?.trackName ?? _mockState.trackTitle,
+                          trackArtist: _playerState?.artistName ?? _mockState.trackArtist,
+                          trackImageAsset: _playerState?.resolvedImageUrl ??
+                              _mockState.trackImageAsset,
+                          trackBpm: _mockState.trackBpm,
+                          userCadence: _userCadence,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      _BottomNav(
+                        items: _tabs,
+                        selectedIndex: _selectedTab,
+                        onSelected: (index) => setState(() => _selectedTab = index),
+                      ),
+                    ],
                   ),
                 ),
-              ),
+              ],
             ),
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 6,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _NowPlayingBar(
-                    trackTitle: currentTrack?.title ?? _mockState.trackTitle,
-                    trackArtist: currentTrack == null
-                        ? _mockState.trackArtist
-                        : '${currentTrack.mood} ${currentTrack.category}',
-                    trackImageAsset:
-                        currentTrack?.imageAsset ?? _mockState.trackImageAsset,
-                    trackBpm: currentTrack?.bpm ?? _mockState.trackBpm,
-                    userCadence: _userCadence,
-                  ),
-                  const SizedBox(height: 6),
-                  _BottomNav(
-                    items: _tabs,
-                    selectedIndex: _selectedTab,
-                    onSelected: (index) => setState(() => _selectedTab = index),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildSelectedTabBody() {
-    final auth = AuthScope.watch(context);
-    final playlists = auth.playlists.isEmpty
-        ? mockTempoPlaylists
-        : auth.playlists;
+  Widget _buildSelectedTabBody(SpotifyAuthController auth) {
+    final playlists = auth.playlists.isEmpty ? mockTempoPlaylists : auth.playlists;
 
     switch (_selectedTab) {
       case 0:
         return _HomeTabView(
+          key: const ValueKey('home'),
           state: _mockState,
           pulse: _pulseController,
           userCadence: _userCadence,
           todaySteps: _todaySteps + _liveAddedSteps,
           syncGap: _syncGap,
-          recentPlaylists: _recentPlaylists,
+          recentPlaylists: playlists,
           onGoToLibrary: _goToLibraryTab,
           onChangeBpm: _openBpmPicker,
-          onOpenPlaylist: _openPlaylist,
+          onOpenPlaylist: (p) => context.push('/playlist', extra: p),
         );
       case 1:
         return SearchPage(
@@ -403,6 +392,7 @@ class _HomePageState extends State<HomePage>
 
 class _HomeTabView extends StatelessWidget {
   const _HomeTabView({
+    Key? key,
     required this.state,
     required this.pulse,
     required this.userCadence,
@@ -412,7 +402,7 @@ class _HomeTabView extends StatelessWidget {
     required this.onGoToLibrary,
     required this.onChangeBpm,
     required this.onOpenPlaylist,
-  });
+  }) : super(key: key);
 
   final _HomeMockState state;
   final Animation<double> pulse;

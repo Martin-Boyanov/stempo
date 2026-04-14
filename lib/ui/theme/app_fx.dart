@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -66,7 +67,7 @@ class AppFx {
   }
 }
 
-class AtmosphereBackground extends StatelessWidget {
+class AtmosphereBackground extends StatefulWidget {
   const AtmosphereBackground({
     super.key,
     required this.child,
@@ -79,36 +80,81 @@ class AtmosphereBackground extends StatelessWidget {
   final Color secondaryAccent;
 
   @override
+  State<AtmosphereBackground> createState() => _AtmosphereBackgroundState();
+}
+
+class _AtmosphereBackgroundState extends State<AtmosphereBackground>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 15),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        const DecoratedBox(
-          decoration: BoxDecoration(gradient: AppFx.pageGradient),
-        ),
-        Positioned(
-          top: -90,
-          left: -30,
-          child: _GlowOrb(size: 220, color: accent.withValues(alpha: 0.22)),
-        ),
-        Positioned(
-          top: 140,
-          right: -70,
-          child: _GlowOrb(
-            size: 240,
-            color: secondaryAccent.withValues(alpha: 0.16),
-          ),
-        ),
-        Positioned(
-          bottom: -120,
-          left: 40,
-          child: _GlowOrb(
-            size: 280,
-            color: AppColors.primaryBright.withValues(alpha: 0.10),
-          ),
-        ),
-        child,
-      ],
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final t = _controller.value;
+        final drift1 = Offset(
+          math.sin(t * math.pi * 2) * 20,
+          math.cos(t * math.pi * 2) * 15,
+        );
+        final drift2 = Offset(
+          math.cos(t * math.pi * 2 + 1) * 25,
+          math.sin(t * math.pi * 2 + 1) * 20,
+        );
+        final drift3 = Offset(
+          math.sin(t * math.pi * 2 + 2) * 30,
+          math.cos(t * math.pi * 2 + 2) * 25,
+        );
+
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            const DecoratedBox(
+              decoration: BoxDecoration(gradient: AppFx.pageGradient),
+            ),
+            Positioned(
+              top: -90 + drift1.dy,
+              left: -30 + drift1.dx,
+              child: _GlowOrb(
+                size: 260,
+                color: widget.accent.withValues(alpha: 0.28),
+              ),
+            ),
+            Positioned(
+              top: 240 + drift2.dy,
+              right: -90 + drift2.dx,
+              child: _GlowOrb(
+                size: 320,
+                color: widget.secondaryAccent.withValues(alpha: 0.22),
+              ),
+            ),
+            Positioned(
+              bottom: -140 + drift3.dy,
+              left: 20 + drift3.dx,
+              child: _GlowOrb(
+                size: 380,
+                color: AppColors.primaryBright.withValues(alpha: 0.12),
+              ),
+            ),
+            if (widget.child != null) widget.child!,
+          ],
+        );
+      },
     );
   }
 }

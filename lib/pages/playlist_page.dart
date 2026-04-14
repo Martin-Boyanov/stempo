@@ -126,17 +126,17 @@ class _PlaylistPageState extends State<PlaylistPage> {
     final isLoadingTracks = auth.isLoadingTracksForPlaylist(playlist.id);
 
     return Scaffold(
-      body: SafeArea(
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: AtmosphereBackground(
-                accent: playlist.colors.last,
-                secondaryAccent: AppColors.cinemaRed,
-                child: const SizedBox.expand(),
-              ),
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: AtmosphereBackground(
+              accent: playlist.colors.last,
+              secondaryAccent: AppColors.cinemaRed,
+              child: const SizedBox.expand(),
             ),
-            SingleChildScrollView(
+          ),
+          SafeArea(
+            child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -223,8 +223,8 @@ class _PlaylistPageState extends State<PlaylistPage> {
                 ],
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
