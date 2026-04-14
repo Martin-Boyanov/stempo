@@ -107,6 +107,9 @@ class SpotifyRemoteService {
   Future<void> skipPrevious() =>
       _methodChannel.invokeMethod<void>('skipPrevious');
 
+  Future<void> seekTo(int positionMs) =>
+      _methodChannel.invokeMethod<void>('seekTo', {'position': positionMs});
+
   Future<void> disconnect() => _methodChannel.invokeMethod<void>('disconnect');
 
   Future<SpotifyRemotePlayerState?> getPlayerState() async {

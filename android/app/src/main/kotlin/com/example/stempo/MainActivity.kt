@@ -125,6 +125,21 @@ class MainActivity : FlutterFragmentActivity() {
                 }
             }
 
+            "seekTo" -> {
+                val position = call.argument<Int>("position")?.toLong()
+                if (position != null) {
+                    ensureConnectionAndExecute(result) { remote ->
+                        remote.playerApi.seekTo(position).setResultCallback {
+                            result.success(true)
+                        }.setErrorCallback { error ->
+                            result.error("seek_failed", error.message, null)
+                        }
+                    }
+                } else {
+                    result.error("invalid_args", "Position is missing.", null)
+                }
+            }
+
             "getPlayerState" -> {
                 ensureConnectionAndExecute(result) { remote ->
                     remote.playerApi.playerState.setResultCallback { state ->

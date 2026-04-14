@@ -1,12 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-
-import '../controllers/spotify_remote_service.dart';
-import '../ui/theme/app_fx.dart';
-import '../ui/theme/colors.dart';
-import '../ui/widgets/media_cover.dart';
 import 'package:palette_generator/palette_generator.dart';
+
+import 'package:stempo/controllers/spotify_remote_service.dart';
+import 'package:stempo/ui/theme/app_fx.dart';
+import 'package:stempo/ui/theme/colors.dart';
+import 'package:stempo/ui/widgets/media_cover.dart';
 
 class NowPlayingPageArgs {
   const NowPlayingPageArgs({
@@ -38,6 +38,7 @@ class NowPlayingPage extends StatefulWidget {
 class _NowPlayingPageState extends State<NowPlayingPage> {
   final SpotifyRemoteService _remote = SpotifyRemoteService.instance;
   StreamSubscription<SpotifyRemotePlayerState>? _playerStateSubscription;
+  Timer? _playbackTimer;
 
   late String _trackTitle;
   late String _trackArtist;
@@ -46,6 +47,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   String? _actualImage;
   int _playbackPositionMs = 69000;
   int _durationMs = 198000;
+  bool _isDragging = false;
   Color _accentColor = AppColors.primary;
   Color _secondaryColor = AppColors.cinemaRed;
 
@@ -56,6 +58,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     _trackArtist = widget.args.trackArtist;
     _trackBpm = widget.args.trackBpm;
     _isPaused = false;
+    _startTimer();
     _bindSpotifyRemote();
     _updatePalette();
   }
@@ -63,6 +66,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   @override
   void dispose() {
     _playerStateSubscription?.cancel();
+    _playbackTimer?.cancel();
     super.dispose();
   }
 
@@ -116,6 +120,20 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     }
   }
 
+  void _startTimer() {
+    _playbackTimer?.cancel();
+    _playbackTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!_isPaused && !_isDragging && mounted) {
+        setState(() {
+          _playbackPositionMs += 1000;
+          if (_playbackPositionMs > _durationMs) {
+            _playbackPositionMs = _durationMs;
+          }
+        });
+      }
+    });
+  }
+
   Future<void> _togglePlayback() async {
     final wasPaused = _isPaused;
     setState(() => _isPaused = !wasPaused);
@@ -140,6 +158,25 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   Future<void> _skipPrevious() async {
     try {
       await _remote.skipPrevious();
+    } catch (_) {}
+  }
+
+  void _onSeekStarted(double value) {
+    setState(() => _isDragging = true);
+  }
+
+  void _onSeeking(double value) {
+    setState(() => _playbackPositionMs = value.toInt());
+  }
+
+  Future<void> _onSeekEnded(double value) async {
+    final position = value.toInt();
+    setState(() {
+      _playbackPositionMs = position;
+      _isDragging = false;
+    });
+    try {
+      await _remote.seekTo(position);
     } catch (_) {}
   }
 
@@ -271,6 +308,9 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                   _PlaybackTimeline(
                     playbackPositionMs: _playbackPositionMs,
                     durationMs: _durationMs,
+                    onChanged: _onSeeking,
+                    onChangeStart: _onSeekStarted,
+                    onChangeEnd: _onSeekEnded,
                   ),
                   const SizedBox(height: 18),
                   _PlaybackControls(
@@ -532,10 +572,16 @@ class _PlaybackTimeline extends StatelessWidget {
   const _PlaybackTimeline({
     required this.playbackPositionMs,
     required this.durationMs,
+    this.onChanged,
+    this.onChangeStart,
+    this.onChangeEnd,
   });
 
   final int playbackPositionMs;
   final int durationMs;
+  final ValueChanged<double>? onChanged;
+  final ValueChanged<double>? onChangeStart;
+  final ValueChanged<double>? onChangeEnd;
 
   @override
   Widget build(BuildContext context) {
@@ -544,18 +590,26 @@ class _PlaybackTimeline extends StatelessWidget {
 
     return Column(
       children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(999),
-          child: LinearProgressIndicator(
-            value: progress,
-            minHeight: 5,
-            backgroundColor: Colors.white.withValues(alpha: 0.08),
-            valueColor: const AlwaysStoppedAnimation<Color>(
-              AppColors.textPrimary,
-            ),
+        SliderTheme(
+          data: SliderTheme.of(context).copyWith(
+            trackHeight: 4,
+            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+            overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+            activeTrackColor: AppColors.textPrimary,
+            inactiveTrackColor: Colors.white.withValues(alpha: 0.1),
+            thumbColor: AppColors.textPrimary,
+            overlayColor: AppColors.primary.withValues(alpha: 0.2),
+          ),
+          child: Slider(
+            value: playbackPositionMs.toDouble().clamp(0, durationMs.toDouble()),
+            min: 0,
+            max: durationMs.toDouble(),
+            onChanged: onChanged,
+            onChangeStart: onChangeStart,
+            onChangeEnd: onChangeEnd,
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 4),
         Row(
           children: [
             Text(
