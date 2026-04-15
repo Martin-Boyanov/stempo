@@ -75,7 +75,6 @@ async def get_song_bpm_batch(
     deduped_ids = list(dict.fromkeys(spotify_ids))
     client = SoundchartsClient()
     results: list[SongBpmBatchItem] = []
-
     for spotify_id in deduped_ids:
         try:
             result = await resolve_song(
@@ -91,13 +90,8 @@ async def get_song_bpm_batch(
                     found=bpm.tempo is not None,
                 )
             )
-        except HTTPException as exc:
-            if exc.status_code == 404:
-                results.append(SongBpmBatchItem(spotify_id=spotify_id, tempo=None, found=False))
-                continue
-            raise
-        except RuntimeError as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        except Exception:
+            results.append(SongBpmBatchItem(spotify_id=spotify_id, tempo=None, found=False))
 
     return SongBpmBatchResponse(items=results)
 

@@ -102,7 +102,10 @@ class _PlaylistPageState extends State<PlaylistPage> {
     final auth = AuthScope.watch(context);
     if (auth.accessToken == null || auth.accessToken!.isEmpty) return;
     _requestedTracks = true;
-    auth.loadTracksForPlaylist(widget.args.playlist.id);
+    auth.loadTracksForPlaylist(
+      widget.args.playlist.id,
+      targetBpm: widget.args.userCadence,
+    );
   }
 
   Future<bool> _openSpotifyUri(String spotifyUri) async {
@@ -154,17 +157,19 @@ class _PlaylistPageState extends State<PlaylistPage> {
 
   Future<void> _startSession(List<SpotifyTrack> tracks) async {
     bool opened = false;
+    final targetBpm = widget.args.userCadence;
+    final minBpm = targetBpm - 10;
+    final maxBpm = targetBpm + 10;
+
     if (tracks.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No tracks in 90-110 BPM were found for this playlist.'),
+        SnackBar(
+          content: Text('No tracks in $minBpm-$maxBpm BPM were found for this playlist.'),
         ),
       );
       return;
     }
 
-    const minBpm = 90;
-    const maxBpm = 110;
     final auth = AuthScope.read(context);
     final sessionPlaylistUri = await auth.ensureSessionPlaylistForBpm(
       sourcePlaylist: widget.args.playlist,
@@ -175,9 +180,16 @@ class _PlaylistPageState extends State<PlaylistPage> {
 
     if (sessionPlaylistUri != null && sessionPlaylistUri.isNotEmpty) {
       opened = await _openSpotifyUri(sessionPlaylistUri);
-    }
-    if (!opened) {
-      // Fallback: open the first matched track directly.
+    } else {
+      // If playlist creation failed, show a hint but keep going with the first track
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Note: Could not create Spotify playlist. Playing tracks individually.'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
       opened = await _openSpotifyUri(tracks.first.spotifyUri);
     }
 
@@ -328,7 +340,10 @@ class _PlaylistPageState extends State<PlaylistPage> {
                     isLoading: isLoadingTracks,
                     loadError: trackLoadError,
                     onPlayTrack: _playTrack,
-                    onRetry: () => auth.loadTracksForPlaylist(playlist.id),
+                    onRetry: () => auth.loadTracksForPlaylist(
+                      playlist.id,
+                      targetBpm: widget.args.userCadence,
+                    ),
                   ),
                 ],
               ),
