@@ -378,13 +378,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                     userCadence: widget.args.userCadence,
                     glowColor: _accentColor,
                   ),
-                  const SizedBox(height: 24),
-                  _ActionCard(
-                    trackBpm: _trackBpm,
-                    userCadence: widget.args.userCadence,
-                    matchLabel: _matchLabel,
-                    glowColor: _secondaryColor,
-                  ),
+                  const SizedBox(height: 32),
                 ],
               ),
             ),
@@ -410,7 +404,7 @@ class _TopActionButton extends StatelessWidget {
         height: 46,
         decoration: AppFx.glassDecoration(
           radius: 18,
-          glowColor: AppColors.cinemaRed,
+          glowColor: (context.findAncestorStateOfType<_NowPlayingPageState>()?._accentColor) ?? AppColors.cinemaRed,
         ),
         child: Icon(icon, color: AppColors.textPrimary, size: 24),
       ),
@@ -533,23 +527,34 @@ class _ProgressCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Container(
+               Container(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
+                  horizontal: 14,
+                  vertical: 6,
                 ),
                 decoration: BoxDecoration(
-                  color: matchColor.withValues(alpha: 0.16),
+                  gradient: LinearGradient(
+                    colors: [
+                      HSLColor.fromColor(glowColor ?? AppColors.primary).withLightness(0.6).toColor(),
+                      glowColor ?? AppColors.primary,
+                    ],
+                  ),
                   borderRadius: BorderRadius.circular(999),
+                  boxShadow: [
+                    BoxShadow(
+                      color: (glowColor ?? AppColors.primary).withValues(alpha: 0.2),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
                 child: Text(
-                  matchLabel,
+                  matchLabel.toUpperCase(),
                   style: TextStyle(
-                    color: matchColor == AppColors.textMuted
-                        ? AppColors.textPrimary
-                        : matchColor,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
+                    color: (glowColor ?? AppColors.primary).computeLuminance() > 0.6 ? Colors.black : Colors.white,
+                    fontSize: 10,
+                    letterSpacing: 1.1,
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
               ),
@@ -568,11 +573,19 @@ class _ProgressCard extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: _StatBlock(label: 'Track BPM', value: '$trackBpm'),
+                child: _StatBlock(
+                  label: 'Track BPM', 
+                  value: '$trackBpm',
+                  glowColor: glowColor,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: _StatBlock(label: 'Your cadence', value: '$userCadence'),
+                child: _StatBlock(
+                  label: 'Your cadence', 
+                  value: '$userCadence',
+                  glowColor: glowColor,
+                ),
               ),
             ],
           ),
@@ -593,17 +606,22 @@ class _ProgressCard extends StatelessWidget {
 }
 
 class _StatBlock extends StatelessWidget {
-  const _StatBlock({required this.label, required this.value});
+  const _StatBlock({
+    required this.label, 
+    required this.value,
+    this.glowColor,
+  });
 
   final String label;
   final String value;
+  final Color? glowColor;
 
   @override
   Widget build(BuildContext context) {
     return FrostedPanel(
       radius: 22,
       padding: const EdgeInsets.all(16),
-      glowColor: AppColors.cinemaRed,
+      glowColor: glowColor ?? AppColors.cinemaRed,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -618,11 +636,11 @@ class _StatBlock extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             value,
-            style: const TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 28,
+            style: TextStyle(
+              color: glowColor ?? AppColors.primary,
+              fontSize: 32,
               height: 1,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w800,
             ),
           ),
         ],
@@ -813,95 +831,7 @@ class _PlayPauseButton extends StatelessWidget {
   }
 }
 
-class _ActionCard extends StatelessWidget {
-  const _ActionCard({
-    required this.trackBpm,
-    required this.userCadence,
-    required this.matchLabel,
-    this.glowColor,
-  });
 
-  final int trackBpm;
-  final int userCadence;
-  final String matchLabel;
-  final Color? glowColor;
-
-  @override
-  Widget build(BuildContext context) {
-    return FrostedPanel(
-      radius: 30,
-      padding: const EdgeInsets.all(20),
-      glowColor: glowColor ?? AppColors.cinemaRed,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Ready for later',
-            style: TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 20,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'This song sits at $trackBpm BPM against your $userCadence target, so right now it reads as $matchLabel.',
-            style: const TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 14,
-              height: 1.45,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary,
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  child: const Center(
-                    child: Text(
-                      'Start synced run',
-                      style: TextStyle(
-                        color: AppColors.background,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceRaised,
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  child: const Center(
-                    child: Text(
-                      'Find better match',
-                      style: TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 String _formatTime(int durationMs) {
   final totalSeconds = (durationMs / 1000).floor().clamp(0, 59999);
