@@ -6,6 +6,7 @@ Backend service for song resolution and tempo data lookup through Soundcharts, w
 
 - `GET /health`
 - `GET /soundcharts/song/bpm?song_uuid=...&isrc=...&spotify_id=...`
+- `POST /soundcharts/song/bpm/batch` with body `{"spotify_ids": ["id1", "id2", ...]}`
 - `GET /soundcharts/song/{song_uuid}/bpm?isrc=...&spotify_id=...`
 - `GET /soundcharts/song?song_uuid=...&isrc=...&spotify_id=...`
 - `GET /soundcharts/song/{song_uuid}?isrc=...&spotify_id=...`
@@ -50,8 +51,12 @@ alembic -c alembic.ini upgrade head
 5. Start API:
 
 ```bash
-uvicorn app.main:app --host 127.0.0.1 --port 8010 --reload
+uvicorn app.main:app --host 0.0.0.0 --port 8010 --reload
 ```
 
 Swagger:
 `http://127.0.0.1:8010/docs`
+
+For Flutter Android:
+- Emulator: `BACKEND_BASE_URL=http://10.0.2.2:8010`
+- Physical device: `BACKEND_BASE_URL=http://<your-computer-lan-ip>:8010`

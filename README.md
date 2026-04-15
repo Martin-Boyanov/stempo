@@ -54,9 +54,16 @@ flutter pub get
 SPOTIFY_CLIENT_ID=your_spotify_client_id
 SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
 SPOTIFY_REDIRECT_URI=stempo://spotify-callback
+BACKEND_BASE_URL=http://10.0.2.2:8010
 ```
 
 **Important:** Register the same redirect URI scheme in platform configuration files (`AndroidManifest.xml` and `Info.plist`) to ensure OAuth callback handling works correctly.
+
+`BACKEND_BASE_URL` is used for BPM lookup (`/soundcharts/song/bpm`) when loading playlist tracks.
+
+On Android:
+- Emulator: use `http://10.0.2.2:8010`
+- Physical device: use `http://<your-computer-lan-ip>:8010`
 
 ### Backend Environment Split
 

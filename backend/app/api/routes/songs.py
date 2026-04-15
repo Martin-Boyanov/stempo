@@ -4,7 +4,13 @@ from sqlalchemy.orm import Session
 from app.api.deps.spotify_auth import require_spotify_token
 from app.clients.soundcharts import SoundchartsClient
 from app.db.session import get_db
-from app.schemas.song import SongBpmResponse, SongResolveResponse
+from app.schemas.song import (
+    SongBpmBatchItem,
+    SongBpmBatchRequest,
+    SongBpmBatchResponse,
+    SongBpmResponse,
+    SongResolveResponse,
+)
 from app.services.song_resolver import resolve_song
 
 router = APIRouter(
@@ -54,6 +60,46 @@ async def get_song_bpm(
         return _to_bpm_response(result, spotify_id)
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/bpm/batch", response_model=SongBpmBatchResponse)
+async def get_song_bpm_batch(
+    payload: SongBpmBatchRequest,
+    db: Session = Depends(get_db),
+) -> SongBpmBatchResponse:
+    spotify_ids = [spotify_id.strip() for spotify_id in payload.spotify_ids if spotify_id and spotify_id.strip()]
+    if not spotify_ids:
+        return SongBpmBatchResponse(items=[])
+
+    # Preserve order while deduplicating.
+    deduped_ids = list(dict.fromkeys(spotify_ids))
+    client = SoundchartsClient()
+    results: list[SongBpmBatchItem] = []
+
+    for spotify_id in deduped_ids:
+        try:
+            result = await resolve_song(
+                db=db,
+                client=client,
+                spotify_id=spotify_id,
+            )
+            bpm = _to_bpm_response(result, spotify_id)
+            results.append(
+                SongBpmBatchItem(
+                    spotify_id=spotify_id,
+                    tempo=bpm.tempo,
+                    found=bpm.tempo is not None,
+                )
+            )
+        except HTTPException as exc:
+            if exc.status_code == 404:
+                results.append(SongBpmBatchItem(spotify_id=spotify_id, tempo=None, found=False))
+                continue
+            raise
+        except RuntimeError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return SongBpmBatchResponse(items=results)
 
 
 @router.get("/{song_uuid}/bpm", response_model=SongBpmResponse)
