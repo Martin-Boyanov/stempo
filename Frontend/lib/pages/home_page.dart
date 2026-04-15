@@ -11,7 +11,10 @@ import '../state/auth_providers.dart';
 import '../state/mock_playlists.dart';
 import '../state/playlist_models.dart';
 import '../controllers/auth_controller.dart';
-import '../controllers/spotify_remote_service.dart';
+import 'dart:ui' show ImageFilter;
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:palette_generator/palette_generator.dart';
 import '../services/step_service.dart';
 import '../ui/theme/app_fx.dart';
 import '../ui/widgets/media_cover.dart';
@@ -20,6 +23,8 @@ import 'now_playing_page.dart';
 import 'playlist_page.dart';
 import 'search_page.dart';
 import '../ui/theme/colors.dart';
+import '../controllers/spotify_remote_service.dart';
+import '../state/spotify_models.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -197,9 +202,88 @@ class _HomePageState extends State<HomePage>
       const Duration(seconds: 1),
       (_) => _refreshTodaySteps(silent: true),
     );
+    _bindRemote();
+  }
+
+  Color _songAccentColor = AppColors.primary;
+  Color _songBgColor = AppColors.surfaceFloating;
+  String? _lastTrackUri;
+
+  Future<void> _updateSongPalette(String? imageUrl, String? trackUri) async {
+    if (imageUrl == null || imageUrl.isEmpty) {
+      setState(() {
+        _songAccentColor = AppColors.primary;
+        _songBgColor = AppColors.surfaceFloating;
+        _lastTrackUri = null;
+      });
+      return;
+    }
+
+    final imageProvider = imageUrl.startsWith('http')
+        ? NetworkImage(imageUrl)
+        : AssetImage(imageUrl) as ImageProvider;
+
+    try {
+      final palette = await PaletteGenerator.fromImageProvider(
+        imageProvider,
+        maximumColorCount: 20,
+      );
+      if (!mounted) return;
+
+      final mainColor = palette.vibrantColor?.color ??
+          palette.lightVibrantColor?.color ??
+          palette.dominantColor?.color ??
+          palette.mutedColor?.color ??
+          AppColors.primary;
+
+      final dominant = palette.dominantColor?.color ??
+          palette.darkMutedColor?.color ??
+          Colors.black;
+      final luminance = dominant.computeLuminance();
+
+      setState(() {
+        _songAccentColor = _ensureVisible(mainColor);
+        if (luminance < 0.05) {
+          _songBgColor = Color.alphaBlend(
+            Colors.white.withValues(alpha: 0.15),
+            dominant.withValues(alpha: 0.92),
+          );
+        } else if (luminance > 0.35) {
+          _songBgColor = Color.alphaBlend(
+            Colors.black.withValues(alpha: 0.75),
+            dominant.withValues(alpha: 0.92),
+          );
+        } else {
+          _songBgColor = dominant.withValues(alpha: 0.9);
+        }
+      });
+    } catch (_) {}
+  }
+
+  Color _ensureVisible(Color color) {
+    final hsl = HSLColor.fromColor(color);
+    if (hsl.lightness < 0.2) {
+      return hsl.withLightness(0.5).withSaturation(0.8).toColor();
+    }
+    return color;
+  }
+
+  void _bindRemote() {
     _playerSubscription =
         SpotifyRemoteService.instance.playerStateStream().listen((state) {
-      if (mounted) setState(() => _playerState = state);
+      if (!mounted) return;
+      setState(() {
+        _playerState = state;
+        final hasNewTrack = state.trackUri != _lastTrackUri;
+        if (state.resolvedImageUrl != null && hasNewTrack) {
+          _lastTrackUri = state.trackUri;
+          _updateSongPalette(state.resolvedImageUrl, state.trackUri);
+        } else if (state.trackUri.isEmpty) {
+          _songAccentColor = AppColors.primary;
+          _songBgColor = AppColors.surfaceFloating;
+          _lastTrackUri = null;
+        }
+      });
     });
   }
 
@@ -324,6 +408,8 @@ class _HomePageState extends State<HomePage>
                           trackArtist: _playerState?.artistName ?? _mockState.trackArtist,
                           trackImageAsset: _playerState?.resolvedImageUrl ??
                               _mockState.trackImageAsset,
+                          accentColor: _songAccentColor,
+                          bgColor: _songBgColor,
                           trackBpm: _mockState.trackBpm,
                           userCadence: _userCadence,
                         ),
@@ -2743,26 +2829,23 @@ class _BottomNav extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-        child: Container(
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.82),
-            border: Border(
-              top: BorderSide(
-                color: Colors.white.withValues(alpha: 0.1),
-                width: 0.5,
-              ),
-            ),
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF121212).withValues(alpha: 0.98),
+        border: Border(
+          top: BorderSide(
+            color: Colors.white.withValues(alpha: 0.05),
+            width: 1,
           ),
-          padding: EdgeInsets.only(
-            left: 12,
-            right: 12,
-            top: 10,
-            bottom: MediaQuery.of(context).padding.bottom + 8,
-          ),
-          child: Row(
+        ),
+      ),
+      padding: EdgeInsets.only(
+        left: 12,
+        right: 12,
+        top: 10,
+        bottom: MediaQuery.of(context).padding.bottom + 8,
+      ),
+      child: Row(
         children: [
           for (var i = 0; i < items.length; i++) ...[
             Expanded(
@@ -2773,39 +2856,34 @@ class _BottomNav extends StatelessWidget {
                   duration: const Duration(milliseconds: 220),
                   padding: const EdgeInsets.symmetric(
                     horizontal: 4,
-                    vertical: 6,
+                    vertical: 8,
                   ),
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(14),
-                    gradient: i == selectedIndex
-                        ? const LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [Color(0x3D1ED760), Color(0x22FF5A5F)],
-                          )
-                        : null,
-                    color: i == selectedIndex ? null : Colors.transparent,
+                    borderRadius: BorderRadius.circular(16),
+                    color: i == selectedIndex
+                        ? AppColors.primary.withValues(alpha: 0.15)
+                        : Colors.transparent,
                   ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
                         items[i].icon,
-                        size: 20,
+                        size: 24,
                         color: i == selectedIndex
-                            ? AppColors.textPrimary
-                            : AppColors.textSecondary,
+                            ? AppColors.primary
+                            : Colors.white.withValues(alpha: 0.5),
                       ),
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 4),
                       Text(
                         items[i].label,
                         style: TextStyle(
                           color: i == selectedIndex
-                              ? AppColors.textPrimary
-                              : Colors.white.withValues(alpha: 0.76),
-                          fontSize: 10,
+                              ? AppColors.primary
+                              : Colors.white.withValues(alpha: 0.5),
+                          fontSize: 11,
                           fontWeight: i == selectedIndex
-                              ? FontWeight.w700
+                              ? FontWeight.w800
                               : FontWeight.w600,
                         ),
                       ),
@@ -2814,19 +2892,22 @@ class _BottomNav extends StatelessWidget {
                 ),
               ),
             ),
-            if (i != items.length - 1) const SizedBox(width: 2),
+            if (i != items.length - 1) const SizedBox(width: 4),
           ],
         ],
       ),
-    ),),);
+    );
   }
 }
+
 
 class _NowPlayingBar extends StatefulWidget {
   const _NowPlayingBar({
     required this.trackTitle,
     required this.trackArtist,
     required this.trackImageAsset,
+    required this.accentColor,
+    required this.bgColor,
     required this.trackBpm,
     required this.userCadence,
   });
@@ -2834,6 +2915,8 @@ class _NowPlayingBar extends StatefulWidget {
   final String trackTitle;
   final String trackArtist;
   final String trackImageAsset;
+  final Color accentColor;
+  final Color bgColor;
   final int trackBpm;
   final int userCadence;
 
@@ -2868,31 +2951,20 @@ class _NowPlayingBarState extends State<_NowPlayingBar> {
         _isPaused = state.isPaused;
         if (state.trackName.isNotEmpty) _actualTitle = state.trackName;
         if (state.artistName.isNotEmpty) _actualArtist = state.artistName;
-        print('SPOTIFY REMOTE NEW STATE: imageUri="${state.imageUri}" -> resolved="${state.resolvedImageUrl}"');
-        if (state.resolvedImageUrl != null) {
-          _actualImage = state.resolvedImageUrl;
-        } else if (state.imageUri != null && state.imageUri!.isNotEmpty) {
-          _actualImage = null; // fallback mapping if empty
-        }
+        if (state.resolvedImageUrl != null) _actualImage = state.resolvedImageUrl;
       });
     });
 
     try {
-      await _remote.connect(showAuthView: false);
       final playerState = await _remote.getPlayerState();
       if (!mounted || playerState == null) return;
       setState(() {
         _isPaused = playerState.isPaused;
         if (playerState.trackName.isNotEmpty) _actualTitle = playerState.trackName;
         if (playerState.artistName.isNotEmpty) _actualArtist = playerState.artistName;
-        print('SPOTIFY REMOTE INIT STATE: imageUri="${playerState.imageUri}" -> resolved="${playerState.resolvedImageUrl}"');
-        if (playerState.resolvedImageUrl != null) {
-          _actualImage = playerState.resolvedImageUrl;
-        }
+        if (playerState.resolvedImageUrl != null) _actualImage = playerState.resolvedImageUrl;
       });
-    } catch (_) {
-      // Keep the bar usable even when Spotify is unavailable.
-    }
+    } catch (_) {}
   }
 
   Future<void> _togglePlayback() async {
@@ -2933,7 +3005,15 @@ class _NowPlayingBarState extends State<_NowPlayingBar> {
         decoration: AppFx.glassDecoration(
           radius: 12,
           elevated: true,
-          glowColor: AppColors.primary.withValues(alpha: 0.1),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              widget.bgColor,
+              widget.bgColor.withValues(alpha: 0.8),
+            ],
+          ),
+          glowColor: widget.accentColor.withValues(alpha: 0.18),
         ),
         child: Row(
           children: [
@@ -2941,15 +3021,15 @@ class _NowPlayingBarState extends State<_NowPlayingBar> {
               imageAsset: _actualImage ?? widget.trackImageAsset,
               size: 42,
               borderRadius: 10,
-              child: Center(
-                child: Icon(
-                  _isPaused
-                      ? Icons.play_arrow_rounded
-                      : Icons.graphic_eq_rounded,
-                  color: AppColors.textPrimary,
-                  size: 22,
-                ),
-              ),
+              child: _isPaused
+                  ? const SizedBox.shrink()
+                  : const Center(
+                      child: Icon(
+                        Icons.graphic_eq_rounded,
+                        color: AppColors.textPrimary,
+                        size: 22,
+                      ),
+                    ),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -2981,24 +3061,23 @@ class _NowPlayingBarState extends State<_NowPlayingBar> {
               ),
             ),
             const SizedBox(width: 12),
-            // Play/Pause toggle button – intercepts taps so it
-            // doesn't trigger the whole-bar navigation.
+            // Play/Pause toggle button
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: _togglePlayback,
               child: Container(
-                width: 36,
-                height: 36,
+                width: 40,
+                height: 40,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  gradient: const LinearGradient(
+                  gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: [AppColors.primaryBright, AppColors.primary],
+                    colors: [AppColors.primary, AppColors.primary.withValues(alpha: 0.8)],
                   ),
                   boxShadow: AppFx.softGlow(
                     AppColors.primary,
-                    strength: 0.22,
+                    strength: 0.35,
                   ),
                 ),
                 child: Icon(
