@@ -362,6 +362,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                     isPaused: _isPaused,
                     isShuffling: _isShuffling,
                     repeatMode: _repeatMode,
+                    accentColor: _accentColor,
                     onTogglePlayback: _togglePlayback,
                     onSkipNext: _skipNext,
                     onSkipPrevious: _skipPrevious,
@@ -703,6 +704,7 @@ class _PlaybackControls extends StatelessWidget {
     required this.isPaused,
     required this.isShuffling,
     required this.repeatMode,
+    required this.accentColor,
     required this.onTogglePlayback,
     required this.onSkipNext,
     required this.onSkipPrevious,
@@ -713,6 +715,7 @@ class _PlaybackControls extends StatelessWidget {
   final bool isPaused;
   final bool isShuffling;
   final int repeatMode;
+  final Color accentColor;
   final Future<void> Function() onTogglePlayback;
   final Future<void> Function() onSkipNext;
   final Future<void> Function() onSkipPrevious;
@@ -728,7 +731,7 @@ class _PlaybackControls extends StatelessWidget {
           onTap: onToggleShuffle,
           child: Icon(
             Icons.shuffle_rounded,
-            color: isShuffling ? AppColors.primaryBright : AppColors.textSecondary,
+            color: isShuffling ? accentColor : AppColors.textSecondary,
             size: 24,
           ),
         ),
@@ -742,6 +745,7 @@ class _PlaybackControls extends StatelessWidget {
         ),
         _PlayPauseButton(
           isPaused: isPaused,
+          accentColor: accentColor,
           onTap: onTogglePlayback,
         ),
         GestureDetector(
@@ -758,7 +762,7 @@ class _PlaybackControls extends StatelessWidget {
             repeatMode == 1
                 ? Icons.repeat_one_rounded
                 : Icons.repeat_rounded,
-            color: repeatMode > 0 ? AppColors.primaryBright : AppColors.textSecondary,
+            color: repeatMode > 0 ? accentColor : AppColors.textSecondary,
             size: 24,
           ),
         ),
@@ -768,10 +772,15 @@ class _PlaybackControls extends StatelessWidget {
 }
 
 class _PlayPauseButton extends StatelessWidget {
-  const _PlayPauseButton({required this.isPaused, required this.onTap});
+  const _PlayPauseButton({
+    required this.isPaused,
+    required this.onTap,
+    required this.accentColor,
+  });
 
   final bool isPaused;
   final Future<void> Function() onTap;
+  final Color accentColor;
 
   @override
   Widget build(BuildContext context) {
@@ -783,16 +792,19 @@ class _PlayPauseButton extends StatelessWidget {
         child: DecoratedBox(
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            gradient: const LinearGradient(
+            gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [AppColors.primaryBright, AppColors.primary],
+              colors: [
+                HSLColor.fromColor(accentColor).withLightness(0.65).toColor(),
+                accentColor,
+              ],
             ),
-            boxShadow: AppFx.softGlow(AppColors.primary, strength: 0.24),
+            boxShadow: AppFx.softGlow(accentColor, strength: 0.28),
           ),
           child: Icon(
             isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
-            color: AppColors.background,
+            color: accentColor.computeLuminance() > 0.6 ? Colors.black : Colors.white,
             size: 40,
           ),
         ),
