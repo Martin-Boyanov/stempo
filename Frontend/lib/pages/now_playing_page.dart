@@ -57,6 +57,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   Color _secondaryColor = AppColors.cinemaRed;
   late final List<String> _allowedTrackUrisOrdered;
   late final Set<String> _allowedTrackUris;
+  late final bool _usesSpotifyPlaylistContext;
   bool _isAutoSkipping = false;
   bool _isAutoAdvancing = false;
   String _currentTrackUri = '';
@@ -85,6 +86,8 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     _trackBpm = widget.args.trackBpm;
     _allowedTrackUrisOrdered = widget.args.allowedTrackUris;
     _allowedTrackUris = widget.args.allowedTrackUris.toSet();
+    _usesSpotifyPlaylistContext =
+        (widget.args.spotifyUri ?? '').startsWith('spotify:playlist:');
     final initialTrackUri = widget.args.spotifyUri ?? '';
     final initialIndex = _allowedTrackUrisOrdered.indexOf(initialTrackUri);
     _currentAllowedIndex = initialIndex >= 0 ? initialIndex : 0;
@@ -173,6 +176,11 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
       _lastRejectedTrackUri = '';
     }
 
+    if (_usesSpotifyPlaylistContext) {
+      // Keep native Spotify playlist context; do not jump via track URIs.
+      return;
+    }
+
     if (_allowedTrackUris.isEmpty ||
         currentTrackUri.isEmpty ||
         _isAutoSkipping) {
@@ -245,6 +253,10 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
 
   Future<void> _skipNext() async {
     try {
+      if (_usesSpotifyPlaylistContext) {
+        await _remote.skipNext();
+        return;
+      }
       if (_allowedTrackUrisOrdered.isNotEmpty) {
         final currentIndex = _allowedTrackUrisOrdered.indexOf(_currentTrackUri);
         final resolvedIndex = currentIndex >= 0 ? currentIndex : _currentAllowedIndex;
@@ -259,6 +271,10 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
 
   Future<void> _skipPrevious() async {
     try {
+      if (_usesSpotifyPlaylistContext) {
+        await _remote.skipPrevious();
+        return;
+      }
       if (_allowedTrackUrisOrdered.isNotEmpty) {
         final currentIndex = _allowedTrackUrisOrdered.indexOf(_currentTrackUri);
         final resolvedIndex = currentIndex >= 0 ? currentIndex : _currentAllowedIndex;

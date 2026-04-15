@@ -163,7 +163,23 @@ class _PlaylistPageState extends State<PlaylistPage> {
       return;
     }
 
-    opened = await _openSpotifyUri(tracks.first.spotifyUri);
+    const minBpm = 90;
+    const maxBpm = 110;
+    final auth = AuthScope.read(context);
+    final sessionPlaylistUri = await auth.ensureSessionPlaylistForBpm(
+      sourcePlaylist: widget.args.playlist,
+      tracks: tracks,
+      minBpm: minBpm,
+      maxBpm: maxBpm,
+    );
+
+    if (sessionPlaylistUri != null && sessionPlaylistUri.isNotEmpty) {
+      opened = await _openSpotifyUri(sessionPlaylistUri);
+    }
+    if (!opened) {
+      // Fallback: open the first matched track directly.
+      opened = await _openSpotifyUri(tracks.first.spotifyUri);
+    }
 
     if (!mounted) return;
     if (!opened) {
@@ -191,7 +207,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
                 : widget.args.playlist.imageAsset,
         trackBpm: displayTrack?.bpm ?? widget.args.playlist.bpm,
         userCadence: widget.args.userCadence,
-        spotifyUri: displayTrack?.spotifyUri,
+        spotifyUri: sessionPlaylistUri ?? displayTrack?.spotifyUri,
         allowedTrackUris: tracks
             .map((track) => track.spotifyUri)
             .where((uri) => uri.isNotEmpty)

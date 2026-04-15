@@ -524,8 +524,22 @@ class _HomeTabView extends StatelessWidget {
     return 'Off pace';
   }
 
+  bool _isBpmSpecificPlaylist(TempoPlaylist playlist) {
+    return RegExp(
+      r'\b\d{2,3}\s*-\s*\d{2,3}\s*BPM$',
+      caseSensitive: false,
+    ).hasMatch(playlist.title);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final regularRecents = recentPlaylists
+        .where((playlist) => !_isBpmSpecificPlaylist(playlist))
+        .toList(growable: false);
+    final bpmRecents = recentPlaylists
+        .where(_isBpmSpecificPlaylist)
+        .toList(growable: false);
+
     return SingleChildScrollView(
       padding: const EdgeInsets.only(bottom: 172),
       child: Padding(
@@ -573,17 +587,30 @@ class _HomeTabView extends StatelessWidget {
             const SizedBox(height: 14),
             const _SectionLabel(title: 'Recents', trailing: 'Jump back in'),
             const SizedBox(height: 12),
-            if (recentPlaylists.isEmpty)
+            if (regularRecents.isEmpty)
               const _InlineEmptyState(
                 title: 'No recent playlists yet',
                 subtitle: 'Start a session in Library and it will show here.',
               )
             else
               _JumpBackInRow(
-                items: recentPlaylists,
+                items: regularRecents,
                 fitLabelBuilder: _fitLabel,
                 onTapPlaylist: onOpenPlaylist,
               ),
+            if (bpmRecents.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              _SectionLabel(
+                title: 'BPM playlists',
+                trailing: '${bpmRecents.length} generated',
+              ),
+              const SizedBox(height: 12),
+              _JumpBackInRow(
+                items: bpmRecents,
+                fitLabelBuilder: _fitLabel,
+                onTapPlaylist: onOpenPlaylist,
+              ),
+            ],
             const SizedBox(height: 18),
             _StartSessionCard(
               state: state,
