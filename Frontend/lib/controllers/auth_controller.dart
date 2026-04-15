@@ -37,6 +37,7 @@ class SpotifyAuthController extends ChangeNotifier {
     'playlist-modify-public',
     'user-library-read',
     'user-read-playback-state',
+    'user-modify-playback-state',
   ];
   static const _verifierAlphabet =
       'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
@@ -612,6 +613,22 @@ class SpotifyAuthController extends ChangeNotifier {
         return null;
       }
 
+      final existingPlaylist = await _findExistingGeneratedPlaylist(
+        userId: userId,
+        playlistTitle: playlistTitle,
+      );
+      if (existingPlaylist != null) {
+        _sessionPlaylistCache[cacheKey] = _SessionPlaylistCacheEntry(
+          playlistUri: existingPlaylist.playlistUri,
+          signature: signature,
+          createdAt: DateTime.now(),
+        );
+        _debugTrackLoad(
+          'session_playlist_reuse_existing source=${sourcePlaylist.id} playlistId=${existingPlaylist.playlistId} uri=${existingPlaylist.playlistUri}',
+        );
+        return existingPlaylist.playlistUri;
+      }
+
       final created = await _postJson(
         'https://api.spotify.com/v1/users/$userId/playlists',
         {
@@ -670,6 +687,55 @@ class SpotifyAuthController extends ChangeNotifier {
     } catch (e) {
       _debugTrackLoad('session_playlist_error source=${sourcePlaylist.id} detail=$e');
       return null;
+    }
+  }
+
+  Future<bool> startPlaylistPlaybackAtTrack({
+    required String playlistUri,
+    required String trackUri,
+  }) async {
+    if (playlistUri.isEmpty || trackUri.isEmpty) return false;
+    if (!await _ensureValidAccessToken()) return false;
+
+    final client = HttpClient()..connectionTimeout = _spotifyRequestTimeout;
+    const url = 'https://api.spotify.com/v1/me/player/play';
+    try {
+      final request = await client
+          .putUrl(Uri.parse(url))
+          .timeout(_spotifyRequestTimeout);
+      request.headers.set(
+        HttpHeaders.authorizationHeader,
+        'Bearer $_accessToken',
+      );
+      request.headers.contentType = ContentType.json;
+      request.write(
+        jsonEncode({
+          'context_uri': playlistUri,
+          'offset': {'uri': trackUri},
+        }),
+      );
+      final response = await request.close().timeout(_spotifyRequestTimeout);
+      final payload = await response
+          .transform(utf8.decoder)
+          .join()
+          .timeout(_spotifyRequestTimeout);
+
+      final ok = response.statusCode >= 200 && response.statusCode < 300;
+      if (!ok) {
+        _debugTrackLoad(
+          'player_play_error status=${response.statusCode} body=$payload',
+        );
+      } else {
+        _debugTrackLoad(
+          'player_play_ok context=$playlistUri offset=$trackUri',
+        );
+      }
+      return ok;
+    } catch (e) {
+      _debugTrackLoad('player_play_exception detail=$e');
+      return false;
+    } finally {
+      client.close(force: true);
     }
   }
 
@@ -882,6 +948,44 @@ class SpotifyAuthController extends ChangeNotifier {
     }
   }
 
+  Future<_ExistingPlaylistMatch?> _findExistingGeneratedPlaylist({
+    required String userId,
+    required String playlistTitle,
+  }) async {
+    final normalizedTitle = playlistTitle.trim().toLowerCase();
+
+    String? nextUrl = 'https://api.spotify.com/v1/me/playlists?limit=50';
+    var pageCount = 0;
+
+    while (nextUrl != null && pageCount < 8) {
+      final payload = await _getJson(nextUrl);
+      final items = payload['items'] as List<dynamic>? ?? const [];
+      for (final item in items.whereType<Map<String, dynamic>>()) {
+        final name = (item['name'] as String? ?? '').trim().toLowerCase();
+        if (name != normalizedTitle) continue;
+
+        final owner = item['owner'] as Map<String, dynamic>? ?? const {};
+        final ownerId = owner['id'] as String? ?? '';
+        if (ownerId != userId) continue;
+
+        final playlistUri = item['uri'] as String? ?? '';
+        final playlistId = item['id'] as String? ?? '';
+        if (playlistUri.isEmpty || playlistId.isEmpty) continue;
+
+        return _ExistingPlaylistMatch(
+          playlistId: playlistId,
+          playlistUri: playlistUri,
+        );
+      }
+
+      final next = payload['next'] as String?;
+      nextUrl = (next != null && next.isNotEmpty) ? next : null;
+      pageCount++;
+    }
+
+    return null;
+  }
+
   SpotifyUserProfile _parseProfile(Map<String, dynamic> json) {
     final images = json['images'] as List<dynamic>? ?? const [];
     final firstImage = images.isNotEmpty ? images.first as Map<String, dynamic>? : null;
@@ -979,4 +1083,14 @@ class _SessionPlaylistCacheEntry {
   final String playlistUri;
   final String signature;
   final DateTime createdAt;
+}
+
+class _ExistingPlaylistMatch {
+  const _ExistingPlaylistMatch({
+    required this.playlistId,
+    required this.playlistUri,
+  });
+
+  final String playlistId;
+  final String playlistUri;
 }

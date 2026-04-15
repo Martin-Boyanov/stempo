@@ -44,10 +44,7 @@ class _LibraryPageState extends State<LibraryPage> {
   List<TempoPlaylist> get _playlists => widget.playlists ?? const [];
 
   bool _isBpmSpecificPlaylist(TempoPlaylist playlist) {
-    return RegExp(
-      r'\b\d{2,3}\s*-\s*\d{2,3}\s*BPM$',
-      caseSensitive: false,
-    ).hasMatch(playlist.title);
+    return playlist.title.toLowerCase().contains('bpm');
   }
 
   List<TempoPlaylist> get _filteredPlaylists {

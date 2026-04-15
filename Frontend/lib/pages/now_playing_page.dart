@@ -967,7 +967,7 @@ class _PlayPauseButton extends StatelessWidget {
           ),
           child: Icon(
             isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
-            color: accentColor.computeLuminance() > 0.6 ? Colors.black : Colors.white,
+            color: AppColors.background,
             size: 40,
           ),
         ),

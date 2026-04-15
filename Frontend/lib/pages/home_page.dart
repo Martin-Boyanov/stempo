@@ -103,6 +103,12 @@ class _HomePageState extends State<HomePage>
 
   void _goToLibraryTab() => setState(() => _selectedTab = 2);
 
+  void _refreshPlaylistsFromSpotify() {
+    final auth = AuthScope.read(context);
+    if (!auth.isConnected) return;
+    unawaited(auth.loadUserData());
+  }
+
   Future<void> _openBpmPicker() async {
     var tempCadence = _userCadence.toDouble();
 
@@ -194,7 +200,6 @@ class _HomePageState extends State<HomePage>
 
   StreamSubscription<SpotifyRemotePlayerState>? _playerSubscription;
   SpotifyRemotePlayerState? _playerState;
-  Timer? _stepsRefreshTimer;
 
   @override
   void initState() {
@@ -205,10 +210,6 @@ class _HomePageState extends State<HomePage>
     )..repeat(reverse: true);
     _refreshTodaySteps();
     _initLiveTracking();
-    _stepsRefreshTimer = Timer.periodic(
-      const Duration(seconds: 1),
-      (_) => _refreshTodaySteps(silent: true),
-    );
     _bindRemote();
   }
 
@@ -325,7 +326,6 @@ class _HomePageState extends State<HomePage>
   void dispose() {
     _stepSubscription?.cancel();
     _playerSubscription?.cancel();
-    _stepsRefreshTimer?.cancel();
     _pulseController.dispose();
     super.dispose();
   }
@@ -408,20 +408,22 @@ class _HomePageState extends State<HomePage>
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        child: _NowPlayingBar(
-                          trackTitle: _playerState?.trackName ?? _mockState.trackTitle,
-                          trackArtist: _playerState?.artistName ?? _mockState.trackArtist,
-                          trackImageAsset: _playerState?.resolvedImageUrl ??
-                              _mockState.trackImageAsset,
-                          accentColor: _songAccentColor,
-                          bgColor: _songBgColor,
-                          trackBpm: _mockState.trackBpm,
-                          userCadence: _userCadence,
+                      if ((_playerState?.trackUri.isNotEmpty ?? false) &&
+                          (_playerState?.trackName.isNotEmpty ?? false)) ...[
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: _NowPlayingBar(
+                            trackTitle: _playerState?.trackName ?? '',
+                            trackArtist: _playerState?.artistName ?? '',
+                            trackImageAsset: _playerState?.resolvedImageUrl ?? '',
+                            accentColor: _songAccentColor,
+                            bgColor: _songBgColor,
+                            trackBpm: _mockState.trackBpm,
+                            userCadence: _userCadence,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 8),
+                        const SizedBox(height: 8),
+                      ],
                       _BottomNav(
                         items: _tabs,
                         selectedIndex: _selectedTab,
@@ -457,6 +459,7 @@ class _HomePageState extends State<HomePage>
           onGoToLibrary: _goToLibraryTab,
           onChangeBpm: _openBpmPicker,
           onOpenPlaylist: _openPlaylist,
+          onRefreshPlaylists: _refreshPlaylistsFromSpotify,
         );
       case 1:
         return SearchPage(
@@ -505,6 +508,7 @@ class _HomeTabView extends StatelessWidget {
     required this.onGoToLibrary,
     required this.onChangeBpm,
     required this.onOpenPlaylist,
+    required this.onRefreshPlaylists,
   }) : super(key: key);
 
   final _HomeMockState state;
@@ -516,19 +520,10 @@ class _HomeTabView extends StatelessWidget {
   final VoidCallback onGoToLibrary;
   final VoidCallback onChangeBpm;
   final ValueChanged<TempoPlaylist> onOpenPlaylist;
-
-  String _fitLabel(TempoPlaylist playlist) {
-    final difference = (playlist.bpm - userCadence).abs();
-    if (difference <= 3) return 'Perfect fit';
-    if (difference <= 8) return 'Close';
-    return 'Off pace';
-  }
+  final VoidCallback onRefreshPlaylists;
 
   bool _isBpmSpecificPlaylist(TempoPlaylist playlist) {
-    return RegExp(
-      r'\b\d{2,3}\s*-\s*\d{2,3}\s*BPM$',
-      caseSensitive: false,
-    ).hasMatch(playlist.title);
+    return playlist.title.toLowerCase().contains('bpm');
   }
 
   @override
@@ -585,7 +580,11 @@ class _HomeTabView extends StatelessWidget {
               todaySteps: todaySteps,
             ),
             const SizedBox(height: 14),
-            const _SectionLabel(title: 'Recents', trailing: 'Jump back in'),
+            _SectionLabel(
+              title: 'Recents',
+              trailing: 'Jump back in',
+              onTitleTap: onRefreshPlaylists,
+            ),
             const SizedBox(height: 12),
             if (regularRecents.isEmpty)
               const _InlineEmptyState(
@@ -595,7 +594,6 @@ class _HomeTabView extends StatelessWidget {
             else
               _JumpBackInRow(
                 items: regularRecents,
-                fitLabelBuilder: _fitLabel,
                 onTapPlaylist: onOpenPlaylist,
               ),
             if (bpmRecents.isNotEmpty) ...[
@@ -603,11 +601,11 @@ class _HomeTabView extends StatelessWidget {
               _SectionLabel(
                 title: 'BPM playlists',
                 trailing: '${bpmRecents.length} generated',
+                onTitleTap: onRefreshPlaylists,
               ),
               const SizedBox(height: 12),
               _JumpBackInRow(
                 items: bpmRecents,
-                fitLabelBuilder: _fitLabel,
                 onTapPlaylist: onOpenPlaylist,
               ),
             ],
@@ -2542,18 +2540,16 @@ class _ActionPillButton extends StatelessWidget {
 class _JumpBackInRow extends StatelessWidget {
   const _JumpBackInRow({
     required this.items,
-    required this.fitLabelBuilder,
     required this.onTapPlaylist,
   });
 
   final List<TempoPlaylist> items;
-  final String Function(TempoPlaylist) fitLabelBuilder;
   final ValueChanged<TempoPlaylist> onTapPlaylist;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 182,
+      height: 198,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: items.length,
@@ -2561,10 +2557,9 @@ class _JumpBackInRow extends StatelessWidget {
         itemBuilder: (context, index) {
           final item = items[index];
           return SizedBox(
-            width: 140,
+            width: 152,
             child: _JumpBackCard(
               item: item,
-              fitLabel: fitLabelBuilder(item),
               onTap: () => onTapPlaylist(item),
             ),
           );
@@ -2577,16 +2572,48 @@ class _JumpBackInRow extends StatelessWidget {
 class _JumpBackCard extends StatelessWidget {
   const _JumpBackCard({
     required this.item,
-    required this.fitLabel,
     required this.onTap,
   });
 
   final TempoPlaylist item;
-  final String fitLabel;
   final VoidCallback onTap;
+
+  bool _isBpmPlaylist(String title) => title.toLowerCase().contains('bpm');
+
+  ({int? min, int? max, int? single}) _bpmDataFromTitle(String title) {
+    final rangeMatch = RegExp(
+      r'(\d{2,3})\s*-\s*(\d{2,3})\s*bpm\b',
+      caseSensitive: false,
+    ).firstMatch(title);
+    if (rangeMatch != null) {
+      final min = int.tryParse(rangeMatch.group(1) ?? '');
+      final max = int.tryParse(rangeMatch.group(2) ?? '');
+      if (min != null && max != null) {
+        return (min: min, max: max, single: null);
+      }
+    }
+
+    final singleMatch = RegExp(
+      r'(\d{2,3})\s*bpm\b',
+      caseSensitive: false,
+    ).firstMatch(title);
+    final single = int.tryParse(singleMatch?.group(1) ?? '');
+    return (min: null, max: null, single: single);
+  }
 
   @override
   Widget build(BuildContext context) {
+    final isBpmPlaylist = _isBpmPlaylist(item.title);
+    final bpmData = _bpmDataFromTitle(item.title);
+    final bpmBannerText = bpmData.min != null && bpmData.max != null
+        ? '${((bpmData.min! + bpmData.max!) / 2).round()}'
+        : bpmData.single?.toString();
+    final bpmFooterText = bpmData.min != null && bpmData.max != null
+        ? '${bpmData.min}-${bpmData.max} BPM'
+        : bpmData.single != null
+            ? '${bpmData.single} BPM'
+            : null;
+
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
@@ -2612,40 +2639,50 @@ class _JumpBackCard extends StatelessWidget {
                       color: Colors.white.withValues(alpha: 0.18),
                     ),
                   ),
-                  Positioned(
-                    left: 10,
-                    bottom: 8,
-                    child: Text(
-                      '${item.bpm}',
-                      style: const TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
+                  if (isBpmPlaylist && bpmBannerText != null)
+                    Positioned(
+                      left: 10,
+                      bottom: 8,
+                      child: Text(
+                        bpmBannerText,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                     ),
-                  ),
                 ],
               ),
             ),
-            const SizedBox(height: 12),
-            Text(
-              item.title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 15,
-                height: 1.1,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              fitLabel,
-              style: const TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
+            const SizedBox(height: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.title,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 16,
+                      height: 1.15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  if (isBpmPlaylist && bpmFooterText != null) ...[
+                    const Spacer(),
+                    Text(
+                      bpmFooterText,
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
           ],
@@ -2698,21 +2735,30 @@ class _InlineEmptyState extends StatelessWidget {
 }
 
 class _SectionLabel extends StatelessWidget {
-  const _SectionLabel({required this.title, required this.trailing});
+  const _SectionLabel({
+    required this.title,
+    required this.trailing,
+    this.onTitleTap,
+  });
 
   final String title;
   final String trailing;
+  final VoidCallback? onTitleTap;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Text(
-          title,
-          style: const TextStyle(
-            color: AppColors.textPrimary,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTitleTap,
+          child: Text(
+            title,
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
         const Spacer(),
@@ -3006,9 +3052,15 @@ class _NowPlayingBarState extends State<_NowPlayingBar> {
       if (!mounted) return;
       _setStateSafely(() {
         _isPaused = state.isPaused;
-        if (state.trackName.isNotEmpty) _actualTitle = state.trackName;
-        if (state.artistName.isNotEmpty) _actualArtist = state.artistName;
-        if (state.resolvedImageUrl != null) _actualImage = state.resolvedImageUrl;
+        if (state.trackUri.isEmpty || state.trackName.isEmpty) {
+          _actualTitle = null;
+          _actualArtist = null;
+          _actualImage = null;
+          return;
+        }
+        _actualTitle = state.trackName;
+        _actualArtist = state.artistName;
+        _actualImage = state.resolvedImageUrl;
       });
     });
 
@@ -3017,9 +3069,15 @@ class _NowPlayingBarState extends State<_NowPlayingBar> {
       if (!mounted || playerState == null) return;
       _setStateSafely(() {
         _isPaused = playerState.isPaused;
-        if (playerState.trackName.isNotEmpty) _actualTitle = playerState.trackName;
-        if (playerState.artistName.isNotEmpty) _actualArtist = playerState.artistName;
-        if (playerState.resolvedImageUrl != null) _actualImage = playerState.resolvedImageUrl;
+        if (playerState.trackUri.isEmpty || playerState.trackName.isEmpty) {
+          _actualTitle = null;
+          _actualArtist = null;
+          _actualImage = null;
+          return;
+        }
+        _actualTitle = playerState.trackName;
+        _actualArtist = playerState.artistName;
+        _actualImage = playerState.resolvedImageUrl;
       });
     } catch (_) {}
   }
@@ -3040,10 +3098,12 @@ class _NowPlayingBarState extends State<_NowPlayingBar> {
   }
 
   void _navigateToNowPlaying() {
+    final title = _actualTitle ?? widget.trackTitle;
+    if (title.isEmpty) return;
     context.push(
       '/now-playing',
       extra: NowPlayingPageArgs(
-        trackTitle: _actualTitle ?? widget.trackTitle,
+        trackTitle: title,
         trackArtist: _actualArtist ?? widget.trackArtist,
         trackImageAsset: _actualImage ?? widget.trackImageAsset,
         trackBpm: widget.trackBpm,
@@ -3054,6 +3114,9 @@ class _NowPlayingBarState extends State<_NowPlayingBar> {
 
   @override
   Widget build(BuildContext context) {
+    final title = _actualTitle ?? widget.trackTitle;
+    if (title.isEmpty) return const SizedBox.shrink();
+
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: _navigateToNowPlaying,
@@ -3094,7 +3157,7 @@ class _NowPlayingBarState extends State<_NowPlayingBar> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    _actualTitle ?? widget.trackTitle,
+                    title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
