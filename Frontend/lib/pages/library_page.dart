@@ -496,20 +496,13 @@ class _LibraryHeroCard extends StatelessWidget {
               runSpacing: 8,
               children: [
                 _LibraryPill(
-                  label: '${playlist.bpm} BPM',
-                  background: AppColors.background.withValues(alpha: 0.24),
-                ),
-                _LibraryPill(
-                  label: '${playlist.trackCount} tracks',
-                  background: AppColors.background.withValues(alpha: 0.18),
-                ),
-                _LibraryPill(
                   label: fitLabel,
                   background: fitColor.withValues(alpha: 0.22),
                   textColor: fitColor == AppColors.textMuted
                       ? AppColors.textPrimary
                       : fitColor,
                 ),
+                _LibraryPill(label: playlist.category),
               ],
             ),
             const SizedBox(height: 18),
@@ -642,7 +635,6 @@ class _LibraryPlaylistCard extends StatelessWidget {
                     spacing: 8,
                     runSpacing: 8,
                     children: [
-                      _LibraryPill(label: '${playlist.bpm} BPM'),
                       _LibraryPill(label: playlist.category),
                       _LibraryPill(
                         label: fitLabel,
@@ -652,15 +644,6 @@ class _LibraryPlaylistCard extends StatelessWidget {
                             : fitColor,
                       ),
                     ],
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    '${playlist.trackCount} tracks • ${playlist.durationMinutes} min',
-                    style: const TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
                   ),
                 ],
               ),
@@ -748,31 +731,6 @@ class _LibraryCoverArt extends StatelessWidget {
       imageAsset: playlist.imageAsset,
       size: size,
       borderRadius: borderRadius,
-      child: Stack(
-        children: [
-          Positioned(
-            right: -8,
-            top: -6,
-            child: Icon(
-              icon,
-              size: size * 0.62,
-              color: Colors.white.withValues(alpha: 0.12),
-            ),
-          ),
-          Positioned(
-            left: 12,
-            bottom: 10,
-            child: Text(
-              '${playlist.bpm}',
-              style: TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: size * 0.20,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:palette_generator/palette_generator.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../controllers/spotify_remote_service.dart';
@@ -30,6 +31,55 @@ class PlaylistPage extends StatefulWidget {
 class _PlaylistPageState extends State<PlaylistPage> {
   bool _requestedTracks = false;
   bool _isLaunching = false;
+  late Color _accentColor;
+  late Color _secondaryColor;
+
+  @override
+  void initState() {
+    super.initState();
+    _accentColor = widget.args.playlist.colors.last;
+    _secondaryColor = AppColors.cinemaRed;
+    _updatePalette();
+  }
+
+  Future<void> _updatePalette() async {
+    final imagePath = widget.args.playlist.imageAsset;
+    if (imagePath.isEmpty) return;
+
+    final imageProvider = imagePath.startsWith('http')
+        ? NetworkImage(imagePath)
+        : AssetImage(imagePath) as ImageProvider;
+
+    try {
+      final palette = await PaletteGenerator.fromImageProvider(
+        imageProvider,
+        maximumColorCount: 20,
+      );
+      if (!mounted) return;
+
+      final mainColor = palette.vibrantColor?.color ??
+          palette.lightVibrantColor?.color ??
+          palette.dominantColor?.color ??
+          widget.args.playlist.colors.last;
+
+      final sideColor = palette.mutedColor?.color ??
+          palette.darkVibrantColor?.color ??
+          AppColors.cinemaRed;
+
+      setState(() {
+        _accentColor = _ensureVisible(mainColor);
+        _secondaryColor = _ensureVisible(sideColor);
+      });
+    } catch (_) {}
+  }
+
+  Color _ensureVisible(Color color) {
+    final hsl = HSLColor.fromColor(color);
+    if (hsl.lightness < 0.2) {
+      return hsl.withLightness(0.5).withSaturation(0.8).toColor();
+    }
+    return color;
+  }
 
   int get _gap => (widget.args.playlist.bpm - widget.args.userCadence).abs();
 
@@ -130,8 +180,8 @@ class _PlaylistPageState extends State<PlaylistPage> {
         children: [
           Positioned.fill(
             child: AtmosphereBackground(
-              accent: playlist.colors.last,
-              secondaryAccent: AppColors.cinemaRed,
+              accent: _accentColor,
+              secondaryAccent: _secondaryColor,
               child: const SizedBox.expand(),
             ),
           ),
@@ -166,7 +216,10 @@ class _PlaylistPageState extends State<PlaylistPage> {
                     ],
                   ),
                   const SizedBox(height: 24),
-                  _PlaylistArtwork(playlist: playlist),
+                  _PlaylistArtwork(
+                    playlist: playlist,
+                    glowColor: _accentColor,
+                  ),
                   const SizedBox(height: 24),
                   Text(
                     playlist.title,
@@ -257,9 +310,10 @@ class _RoundIconButton extends StatelessWidget {
 }
 
 class _PlaylistArtwork extends StatelessWidget {
-  const _PlaylistArtwork({required this.playlist});
+  const _PlaylistArtwork({required this.playlist, required this.glowColor});
 
   final TempoPlaylist playlist;
+  final Color glowColor;
 
   @override
   Widget build(BuildContext context) {
@@ -270,9 +324,16 @@ class _PlaylistArtwork extends StatelessWidget {
           borderRadius: BorderRadius.circular(34),
           boxShadow: [
             BoxShadow(
-              color: playlist.colors.last.withValues(alpha: 0.34),
-              blurRadius: 40,
-              offset: const Offset(0, 16),
+              color: glowColor.withValues(alpha: 0.45),
+              blurRadius: 72,
+              spreadRadius: 4,
+              offset: const Offset(0, 10),
+            ),
+            BoxShadow(
+              color: glowColor.withValues(alpha: 0.22),
+              blurRadius: 110,
+              spreadRadius: 0,
+              offset: const Offset(0, 18),
             ),
           ],
         ),
@@ -280,45 +341,6 @@ class _PlaylistArtwork extends StatelessWidget {
           imageAsset: playlist.imageAsset,
           size: double.infinity,
           borderRadius: 34,
-          child: Stack(
-            children: [
-              Positioned(
-                right: 16,
-                top: 16,
-                child: Text(
-                  '${playlist.bpm} BPM',
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              Positioned(
-                left: 18,
-                bottom: 16,
-                child: Text(
-                  '${playlist.trackCount} tracks',
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              Positioned(
-                left: 24,
-                top: 24,
-                child: Icon(
-                  playlist.category == 'Running'
-                      ? Icons.directions_run_rounded
-                      : Icons.directions_walk_rounded,
-                  color: Colors.white.withValues(alpha: 0.18),
-                  size: 140,
-                ),
-              ),
-            ],
-          ),
         ),
       ),
     );
