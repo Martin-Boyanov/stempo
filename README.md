@@ -61,6 +61,10 @@ BACKEND_BASE_URL=http://10.0.2.2:8010
 
 `BACKEND_BASE_URL` is used for BPM lookup (`/soundcharts/song/bpm`) when loading playlist tracks.
 
+On Android:
+- Emulator: use `http://10.0.2.2:8010`
+- Physical device: use `http://<your-computer-lan-ip>:8010`
+
 ### Backend Environment Split
 
 - Root `.env` is for Flutter/frontend variables (Spotify) only.

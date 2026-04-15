@@ -13,6 +13,16 @@ import '../pages/playlist_page.dart';
 import '../pages/steps_page.dart';
 
 class AppRouter {
+  static const Set<String> _restorableRoutes = {
+    '/home',
+    '/motion',
+    '/pace',
+    '/steps',
+  };
+
+  static bool _isRestorableRoute(String location) =>
+      _restorableRoutes.contains(location);
+
   static GoRouter createRouter(SpotifyAuthController auth) => GoRouter(
     refreshListenable: auth,
     redirect: (context, state) async {
@@ -29,7 +39,7 @@ class AppRouter {
       if (isAtStart && auth.isConnected) {
         final prefs = await SharedPreferences.getInstance();
         final lastLoc = prefs.getString('last_location');
-        if (lastLoc != null && lastLoc != '/spotify' && lastLoc != '/') {
+        if (lastLoc != null && _isRestorableRoute(lastLoc)) {
           return lastLoc;
         }
         return '/home';
@@ -39,7 +49,7 @@ class AppRouter {
       final isTransitionScreen = state.matchedLocation == '/' || 
                                state.matchedLocation == '/spotify' || 
                                state.matchedLocation == '/spotify-callback';
-      if (!isTransitionScreen) {
+      if (!isTransitionScreen && _isRestorableRoute(state.matchedLocation)) {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('last_location', state.matchedLocation);
       }

@@ -20,10 +20,12 @@ class SpotifyAuthController extends ChangeNotifier {
   static const _clientIdKey = 'SPOTIFY_CLIENT_ID';
   static const _redirectUriKey = 'SPOTIFY_REDIRECT_URI';
   static const _defaultRedirectUri = 'stempo://spotify-callback';
-  static const _defaultBackendBaseUrl = 'http://10.0.2.2:8010';
+  static const _defaultAndroidBackendBaseUrl = 'http://10.0.2.2:8010';
+  static const _defaultLocalBackendBaseUrl = 'http://localhost:8010';
   static const _assumedWalkingBpm = 100;
   static const _walkingBpmTolerance = 10;
-  static const _backendRequestTimeout = Duration(seconds: 8);
+  static const _backendRequestTimeout = Duration(seconds: 20);
+  static const _bpmBatchChunkSize = 10;
   static const _spotifyRequestTimeout = Duration(seconds: 12);
   static const _scopes = [
     'app-remote-control',
@@ -48,7 +50,10 @@ class SpotifyAuthController extends ChangeNotifier {
   List<TempoPlaylist> _playlists = const [];
   List<SpotifySearchEntry> _searchEntries = const [];
   final Map<String, List<SpotifyTrack>> _playlistTracks = {};
+  final Map<String, String> _playlistTrackErrors = {};
   final Set<String> _loadingPlaylistIds = <String>{};
+  int _lastResolvedBpmCount = 0;
+  bool _lastBackendTimedOut = false;
   bool _isLoadingData = false;
   String? _pendingVerifier;
   bool _isHandlingCallback = false;
@@ -77,6 +82,8 @@ class SpotifyAuthController extends ChangeNotifier {
   List<SpotifySearchEntry> get searchEntries => _searchEntries;
   List<SpotifyTrack> tracksForPlaylist(String playlistId) =>
       _playlistTracks[playlistId] ?? const [];
+  String? trackErrorForPlaylist(String playlistId) =>
+      _playlistTrackErrors[playlistId];
   bool isLoadingTracksForPlaylist(String playlistId) =>
       _loadingPlaylistIds.contains(playlistId);
   bool get isLoadingData => _isLoadingData;
@@ -89,8 +96,23 @@ class SpotifyAuthController extends ChangeNotifier {
   String get _clientId => dotenv.env[_clientIdKey] ?? '';
   String get _redirectUri =>
       dotenv.env[_redirectUriKey] ?? _defaultRedirectUri;
-  String get _backendBaseUrl =>
-      (dotenv.env['BACKEND_BASE_URL'] ?? _defaultBackendBaseUrl).trim();
+  String get _backendBaseUrl {
+    final configured = (dotenv.env['BACKEND_BASE_URL'] ?? '').trim();
+    if (configured.isNotEmpty) return configured;
+    if (kIsWeb) return _defaultLocalBackendBaseUrl;
+    if (Platform.isAndroid) return _defaultAndroidBackendBaseUrl;
+    return _defaultLocalBackendBaseUrl;
+  }
+
+  Future<bool> _ensureValidAccessToken() async {
+    final token = _accessToken;
+    if (token == null || token.isEmpty) return false;
+    final expiresAt = _expiresAt;
+    if (expiresAt == null) return true;
+    final refreshThreshold = DateTime.now().add(const Duration(seconds: 30));
+    if (expiresAt.isAfter(refreshThreshold)) return true;
+    return refreshAccessToken();
+  }
   Future<bool> connectWithSpotifyPkce() async {
     final clientId = _clientId;
 
@@ -263,6 +285,7 @@ class SpotifyAuthController extends ChangeNotifier {
     _playlists = const [];
     _searchEntries = const [];
     _playlistTracks.clear();
+    _playlistTrackErrors.clear();
     _loadingPlaylistIds.clear();
     _pendingVerifier = null;
     await _clearSession();
@@ -392,7 +415,7 @@ class SpotifyAuthController extends ChangeNotifier {
   }
 
   Future<void> loadUserData() async {
-    if (_accessToken == null) return;
+    if (!await _ensureValidAccessToken()) return;
 
     _isLoadingData = true;
     notifyListeners();
@@ -417,10 +440,15 @@ class SpotifyAuthController extends ChangeNotifier {
 
   Future<void> loadTracksForPlaylist(String playlistId) async {
     final cachedTracks = _playlistTracks[playlistId];
-    if (_accessToken == null ||
-        playlistId.isEmpty ||
+    if (playlistId.isEmpty ||
         (cachedTracks != null && cachedTracks.isNotEmpty) ||
         _loadingPlaylistIds.contains(playlistId)) {
+      return;
+    }
+    if (!await _ensureValidAccessToken()) {
+      _playlistTrackErrors[playlistId] =
+          'Spotify token is missing or expired. Reconnect Spotify and try again.';
+      notifyListeners();
       return;
     }
 
@@ -448,13 +476,29 @@ class SpotifyAuthController extends ChangeNotifier {
     }
 
     if (realId.isEmpty) return;
+    final looksLikeSpotifyPlaylistId = RegExp(
+      r'^[A-Za-z0-9]{22}$',
+    ).hasMatch(realId);
+    if (!looksLikeSpotifyPlaylistId) {
+      _playlistTrackErrors[playlistId] =
+          'This playlist has no valid Spotify playlist ID, so tracks cannot be loaded.';
+      _debugTrackLoad(
+        'skip playlist=$playlistId reason=invalid_playlist_id realId=$realId uri=${spotifyUri ?? '(none)'}',
+      );
+      notifyListeners();
+      return;
+    }
 
     _loadingPlaylistIds.add(playlistId);
+    _lastResolvedBpmCount = 0;
+    _lastBackendTimedOut = false;
+    _playlistTrackErrors.remove(playlistId);
     notifyListeners();
 
     try {
+      _debugTrackLoad('start playlist=$playlistId spotifyPlaylistId=$realId');
       final json = await _getJson(
-        'https://api.spotify.com/v1/playlists/$realId/tracks?limit=50',
+        'https://api.spotify.com/v1/playlists/$realId/tracks?limit=50&offset=0',
       );
       final items = json['items'] as List<dynamic>? ?? const [];
       final rawTracks = items
@@ -462,11 +506,11 @@ class SpotifyAuthController extends ChangeNotifier {
           .toList(growable: false)
           .asMap()
           .entries
-          .map((entry) => (index: entry.key, item: entry.value))
-          .map((entry) => (
-                index: entry.index,
-                track: entry.item['track'],
-              ))
+           .map((entry) => (index: entry.key, item: entry.value))
+           .map((entry) => (
+                 index: entry.index,
+                 track: entry.item['track'] ?? entry.item['item'],
+               ))
           .where((entry) => entry.track is Map<String, dynamic>)
           .map((entry) => (
                 index: entry.index,
@@ -481,6 +525,9 @@ class SpotifyAuthController extends ChangeNotifier {
           )
           .where((track) => track.spotifyUri.isNotEmpty && track.id.isNotEmpty)
           .toList(growable: false);
+      _debugTrackLoad(
+        'spotify_tracks playlist=$playlistId total=${rawTracks.length}',
+      );
 
       final minBpm = _assumedWalkingBpm - _walkingBpmTolerance;
       final maxBpm = _assumedWalkingBpm + _walkingBpmTolerance;
@@ -490,7 +537,28 @@ class SpotifyAuthController extends ChangeNotifier {
         maxBpm: maxBpm,
       );
       _playlistTracks[playlistId] = filteredTracks;
-    } catch (_) {
+      if (rawTracks.isNotEmpty && filteredTracks.isEmpty) {
+        if (_lastBackendTimedOut && _lastResolvedBpmCount == 0) {
+          _playlistTrackErrors[playlistId] =
+              'Backend BPM lookup timed out. Make sure backend is running and try again.';
+        } else {
+          _playlistTrackErrors[playlistId] =
+              'No tracks in 90-110 BPM were found for this playlist.';
+        }
+      }
+      _debugTrackLoad(
+        'done playlist=$playlistId kept=${filteredTracks.length} range=$minBpm-$maxBpm',
+      );
+    } on _ApiRequestException catch (e) {
+      _playlistTrackErrors[playlistId] =
+          'Track loading failed (${e.statusCode ?? 'network'}): ${e.message}';
+      _debugTrackLoad(
+        'error playlist=$playlistId stage=spotify status=${e.statusCode ?? 'network'} url=${e.url} detail=${e.message}',
+      );
+      _errorMessage = 'Could not load tracks for this playlist yet.';
+    } catch (e) {
+      _playlistTrackErrors[playlistId] = 'Track loading failed: $e';
+      _debugTrackLoad('error playlist=$playlistId stage=unknown detail=$e');
       _errorMessage = 'Could not load tracks for this playlist yet.';
     } finally {
       _loadingPlaylistIds.remove(playlistId);
@@ -508,10 +576,12 @@ class SpotifyAuthController extends ChangeNotifier {
         .where((id) => id.isNotEmpty)
         .toSet()
         .toList(growable: false);
-    final bpmByTrackId = await _fetchTrackBpmsBatch(uniqueTrackIds);
+    final bpmFetchResult = await _fetchTrackBpmsBatch(uniqueTrackIds);
+    _lastResolvedBpmCount = bpmFetchResult.items.length;
+    _lastBackendTimedOut = bpmFetchResult.timedOut;
 
     final resolvedTracks = tracks.map((track) {
-      final bpm = bpmByTrackId[track.id];
+      final bpm = bpmFetchResult.items[track.id];
       if (bpm == null || bpm < minBpm || bpm > maxBpm) {
         return null;
       }
@@ -529,18 +599,40 @@ class SpotifyAuthController extends ChangeNotifier {
     return resolvedTracks.whereType<SpotifyTrack>().toList(growable: false);
   }
 
-  Future<Map<String, double?>> _fetchTrackBpmsBatch(
+  Future<_BpmBatchFetchResult> _fetchTrackBpmsBatch(
     List<String> spotifyIds,
   ) async {
-    if (_accessToken == null ||
-        spotifyIds.isEmpty ||
+    if (spotifyIds.isEmpty ||
         _backendBaseUrl.isEmpty) {
-      return <String, double?>{};
+      return const _BpmBatchFetchResult(items: <String, double?>{});
+    }
+    if (!await _ensureValidAccessToken()) {
+      return const _BpmBatchFetchResult(items: <String, double?>{});
     }
 
+    final bpmById = <String, double?>{};
+    for (var offset = 0; offset < spotifyIds.length; offset += _bpmBatchChunkSize) {
+      final end = min(offset + _bpmBatchChunkSize, spotifyIds.length);
+      final chunk = spotifyIds.sublist(offset, end);
+      final chunkResult = await _fetchTrackBpmsChunk(chunk);
+      bpmById.addAll(chunkResult.items);
+      if (chunkResult.timedOut) {
+        _debugTrackLoad(
+          'backend_timeout_stopping early_after=${bpmById.length}',
+        );
+        return _BpmBatchFetchResult(items: bpmById, timedOut: true);
+      }
+    }
+    return _BpmBatchFetchResult(items: bpmById);
+  }
+
+  Future<_BpmBatchFetchResult> _fetchTrackBpmsChunk(
+    List<String> spotifyIds,
+  ) async {
     final client = HttpClient()..connectionTimeout = _backendRequestTimeout;
     try {
       final uri = Uri.parse('$_backendBaseUrl/soundcharts/song/bpm/batch');
+      _debugTrackLoad('backend_request url=$uri ids=${spotifyIds.length}');
       final request = await client.postUrl(uri).timeout(_backendRequestTimeout);
       request.headers.contentType = ContentType.json;
       request.headers.set(
@@ -556,13 +648,20 @@ class SpotifyAuthController extends ChangeNotifier {
           .join()
           .timeout(_backendRequestTimeout);
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        return <String, double?>{};
+        _debugTrackLoad(
+          'backend_error status=${response.statusCode} body=$payload',
+        );
+        return const _BpmBatchFetchResult(items: <String, double?>{});
       }
 
       final json = jsonDecode(payload);
-      if (json is! Map<String, dynamic>) return <String, double?>{};
+      if (json is! Map<String, dynamic>) {
+        return const _BpmBatchFetchResult(items: <String, double?>{});
+      }
       final items = json['items'];
-      if (items is! List) return <String, double?>{};
+      if (items is! List) {
+        return const _BpmBatchFetchResult(items: <String, double?>{});
+      }
       final bpmById = <String, double?>{};
       for (final item in items.whereType<Map<String, dynamic>>()) {
         final spotifyId = item['spotify_id'] as String? ?? '';
@@ -570,9 +669,19 @@ class SpotifyAuthController extends ChangeNotifier {
         final tempo = item['tempo'];
         bpmById[spotifyId] = tempo is num ? tempo.toDouble() : null;
       }
-      return bpmById;
-    } catch (_) {
-      return <String, double?>{};
+      _debugTrackLoad(
+        'backend_success mapped=${bpmById.length} ids=${spotifyIds.length}',
+      );
+      return _BpmBatchFetchResult(items: bpmById);
+    } on TimeoutException catch (e) {
+      _debugTrackLoad('backend_exception detail=$e');
+      return const _BpmBatchFetchResult(
+        items: <String, double?>{},
+        timedOut: true,
+      );
+    } catch (e) {
+      _debugTrackLoad('backend_exception detail=$e');
+      return const _BpmBatchFetchResult(items: <String, double?>{});
     } finally {
       client.close(force: true);
     }
@@ -592,10 +701,25 @@ class SpotifyAuthController extends ChangeNotifier {
           .timeout(_spotifyRequestTimeout);
       final json = jsonDecode(payload);
 
-      if (response.statusCode < 200 || response.statusCode >= 300 || json is! Map<String, dynamic>) {
-        throw const FormatException('Invalid Spotify response');
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw _ApiRequestException(
+          url: url,
+          statusCode: response.statusCode,
+          message: payload,
+        );
+      }
+      if (json is! Map<String, dynamic>) {
+        throw _ApiRequestException(
+          url: url,
+          statusCode: response.statusCode,
+          message: 'Response is not a JSON object.',
+        );
       }
       return json;
+    } on SocketException catch (e) {
+      throw _ApiRequestException(url: url, message: e.message);
+    } on TimeoutException {
+      throw _ApiRequestException(url: url, message: 'Request timed out.');
     } finally {
       client.close(force: true);
     }
@@ -645,6 +769,11 @@ class SpotifyAuthController extends ChangeNotifier {
         .toList(growable: false);
   }
 
+  void _debugTrackLoad(String message) {
+    if (!kDebugMode) return;
+    debugPrint('[PlaylistTracks] $message');
+  }
+
   String _generateCodeVerifier() {
     final codeUnits = List<int>.generate(
       96,
@@ -659,4 +788,26 @@ class SpotifyAuthController extends ChangeNotifier {
     final digest = sha256.convert(utf8.encode(verifier));
     return base64Url.encode(digest.bytes).replaceAll('=', '');
   }
+}
+
+class _ApiRequestException implements Exception {
+  const _ApiRequestException({
+    required this.url,
+    required this.message,
+    this.statusCode,
+  });
+
+  final String url;
+  final int? statusCode;
+  final String message;
+}
+
+class _BpmBatchFetchResult {
+  const _BpmBatchFetchResult({
+    required this.items,
+    this.timedOut = false,
+  });
+
+  final Map<String, double?> items;
+  final bool timedOut;
 }

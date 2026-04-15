@@ -58,7 +58,11 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   late final List<String> _allowedTrackUrisOrdered;
   late final Set<String> _allowedTrackUris;
   bool _isAutoSkipping = false;
+  bool _isAutoAdvancing = false;
   String _currentTrackUri = '';
+  String _lastRejectedTrackUri = '';
+  String _lastAutoAdvancedSourceUri = '';
+  int _currentAllowedIndex = 0;
 
   void _setStateSafely(VoidCallback updater) {
     if (!mounted) return;
@@ -81,6 +85,9 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     _trackBpm = widget.args.trackBpm;
     _allowedTrackUrisOrdered = widget.args.allowedTrackUris;
     _allowedTrackUris = widget.args.allowedTrackUris.toSet();
+    final initialTrackUri = widget.args.spotifyUri ?? '';
+    final initialIndex = _allowedTrackUrisOrdered.indexOf(initialTrackUri);
+    _currentAllowedIndex = initialIndex >= 0 ? initialIndex : 0;
     _isPaused = false;
     _startTimer();
     _bindSpotifyRemote();
@@ -97,8 +104,11 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   Future<void> _bindSpotifyRemote() async {
     _playerStateSubscription = _remote.playerStateStream().listen((state) {
       if (!mounted) return;
-      _maybeSkipDisallowedTrack(state.trackUri);
+      unawaited(_enforceOrderedPlayback(state));
       _setStateSafely(() {
+        if (_currentTrackUri != state.trackUri) {
+          _lastAutoAdvancedSourceUri = '';
+        }
         _currentTrackUri = state.trackUri;
         if (state.trackName.isNotEmpty) {
           _trackTitle = state.trackName;
@@ -146,25 +156,61 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
         _repeatMode = playerState.repeatMode;
         _updatePalette();
       });
+      unawaited(_enforceOrderedPlayback(playerState));
     } catch (_) {
       // Keep the screen usable even when the remote player is unavailable.
     }
   }
 
-  Future<void> _maybeSkipDisallowedTrack(String currentTrackUri) async {
+  Future<void> _enforceOrderedPlayback(SpotifyRemotePlayerState state) async {
+    if (_allowedTrackUrisOrdered.isEmpty) return;
+    final currentTrackUri = state.trackUri;
+    if (currentTrackUri.isEmpty) return;
+
+    final currentIndex = _allowedTrackUrisOrdered.indexOf(currentTrackUri);
+    if (currentIndex >= 0) {
+      _currentAllowedIndex = currentIndex;
+      _lastRejectedTrackUri = '';
+    }
+
     if (_allowedTrackUris.isEmpty ||
         currentTrackUri.isEmpty ||
-        _allowedTrackUris.contains(currentTrackUri) ||
         _isAutoSkipping) {
       return;
     }
-    _isAutoSkipping = true;
+
+    if (!_allowedTrackUris.contains(currentTrackUri)) {
+      if (_lastRejectedTrackUri == currentTrackUri) return;
+      _lastRejectedTrackUri = currentTrackUri;
+      final safeIndex = _currentAllowedIndex.clamp(
+        0,
+        _allowedTrackUrisOrdered.length - 1,
+      ) as int;
+      await _playAllowedUri(
+        _allowedTrackUrisOrdered[safeIndex],
+        trackIndex: safeIndex,
+      );
+      return;
+    }
+
+    if (state.isPaused || state.durationMs <= 0 || _isAutoAdvancing) return;
+    const nearEndThresholdMs = 1500;
+    final isNearEnd = (state.durationMs - state.playbackPositionMs) <=
+        nearEndThresholdMs;
+    if (!isNearEnd) return;
+    if (_lastAutoAdvancedSourceUri == currentTrackUri) return;
+
+    final nextIndex = (currentIndex + 1) % _allowedTrackUrisOrdered.length;
+    if (nextIndex == currentIndex) return;
+    _lastAutoAdvancedSourceUri = currentTrackUri;
+    _isAutoAdvancing = true;
     try {
-      await _skipUntilAllowed(forward: true);
-    } catch (_) {
-      // Keep playback controls usable even if skip fails once.
+      await _playAllowedUri(
+        _allowedTrackUrisOrdered[nextIndex],
+        trackIndex: nextIndex,
+      );
     } finally {
-      _isAutoSkipping = false;
+      _isAutoAdvancing = false;
     }
   }
 
@@ -201,12 +247,11 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     try {
       if (_allowedTrackUrisOrdered.isNotEmpty) {
         final currentIndex = _allowedTrackUrisOrdered.indexOf(_currentTrackUri);
-        if (currentIndex >= 0 &&
-            currentIndex < _allowedTrackUrisOrdered.length - 1) {
-          final targetUri = _allowedTrackUrisOrdered[currentIndex + 1];
-          await _skipUntilUri(targetUri: targetUri, forward: true);
-          return;
-        }
+        final resolvedIndex = currentIndex >= 0 ? currentIndex : _currentAllowedIndex;
+        final nextIndex = (resolvedIndex + 1) % _allowedTrackUrisOrdered.length;
+        final targetUri = _allowedTrackUrisOrdered[nextIndex];
+        await _playAllowedUri(targetUri, trackIndex: nextIndex);
+        return;
       }
       await _remote.skipNext();
     } catch (_) {}
@@ -216,48 +261,36 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     try {
       if (_allowedTrackUrisOrdered.isNotEmpty) {
         final currentIndex = _allowedTrackUrisOrdered.indexOf(_currentTrackUri);
-        if (currentIndex > 0) {
-          final targetUri = _allowedTrackUrisOrdered[currentIndex - 1];
-          await _skipUntilUri(targetUri: targetUri, forward: false);
-          return;
-        }
+        final resolvedIndex = currentIndex >= 0 ? currentIndex : _currentAllowedIndex;
+        final prevIndex = resolvedIndex <= 0
+            ? _allowedTrackUrisOrdered.length - 1
+            : resolvedIndex - 1;
+        final targetUri = _allowedTrackUrisOrdered[prevIndex];
+        await _playAllowedUri(targetUri, trackIndex: prevIndex);
+        return;
       }
       await _remote.skipPrevious();
     } catch (_) {}
   }
 
-  Future<void> _skipUntilAllowed({required bool forward}) async {
-    final maxHops = _allowedTrackUris.isEmpty ? 6 : _allowedTrackUris.length + 6;
-    for (var i = 0; i < maxHops; i++) {
-      if (_allowedTrackUris.contains(_currentTrackUri)) return;
-      if (forward) {
-        await _remote.skipNext();
-      } else {
-        await _remote.skipPrevious();
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 350));
-    }
-  }
-
-  Future<void> _skipUntilUri({
-    required String targetUri,
-    required bool forward,
-  }) async {
-    if (targetUri.isEmpty) return;
-    if (_currentTrackUri == targetUri) return;
+  Future<bool> _playAllowedUri(String targetUri, {int? trackIndex}) async {
+    if (targetUri.isEmpty) return false;
+    if (_currentTrackUri == targetUri) return true;
     _isAutoSkipping = true;
     try {
-      final maxHops =
-          _allowedTrackUrisOrdered.isEmpty ? 8 : _allowedTrackUrisOrdered.length + 8;
-      for (var i = 0; i < maxHops; i++) {
-        if (_currentTrackUri == targetUri) return;
-        if (forward) {
-          await _remote.skipNext();
-        } else {
-          await _remote.skipPrevious();
-        }
-        await Future<void>.delayed(const Duration(milliseconds: 350));
+      final played = await _remote.playUri(targetUri);
+      if (played) {
+        _setStateSafely(() {
+          _currentTrackUri = targetUri;
+          final resolvedIndex = trackIndex ?? _allowedTrackUrisOrdered.indexOf(targetUri);
+          if (resolvedIndex >= 0) {
+            _currentAllowedIndex = resolvedIndex;
+          }
+        });
       }
+      return played;
+    } catch (_) {
+      return false;
     } finally {
       _isAutoSkipping = false;
     }

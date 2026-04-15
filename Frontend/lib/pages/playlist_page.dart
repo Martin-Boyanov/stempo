@@ -98,36 +98,11 @@ class _PlaylistPageState extends State<PlaylistPage> {
   }
 
   Future<void> _playTrack(SpotifyTrack track) async {
-    final playlistUri = widget.args.playlist.spotifyUri;
-    if (playlistUri != null &&
-        playlistUri.isNotEmpty &&
-        track.playlistPosition >= 0) {
-      if (_isLaunching) return;
-      setState(() => _isLaunching = true);
-      try {
-        final remotePlayed = await SpotifyRemoteService.instance.playUri(
-          playlistUri,
-        );
-        if (remotePlayed) {
-          await _skipToPlaylistPosition(track.playlistPosition);
-          return;
-        }
-      } catch (_) {
-        // Fall back to opening the selected track URI below.
-      } finally {
-        if (mounted) {
-          setState(() => _isLaunching = false);
-        }
-      }
-    }
-
     final opened = await _openSpotifyUri(track.spotifyUri);
     if (!opened || !mounted) return;
   }
 
   Future<void> _startSession(List<SpotifyTrack> tracks) async {
-    // Play the PLAYLIST context so all tracks play in order within the playlist
-    final playlistUri = widget.args.playlist.spotifyUri;
     bool opened = false;
     if (tracks.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -138,15 +113,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
       return;
     }
 
-    if (playlistUri != null && playlistUri.isNotEmpty) {
-      opened = await _openSpotifyUri(playlistUri);
-      if (opened && tracks.first.playlistPosition > 0) {
-        await _skipToPlaylistPosition(tracks.first.playlistPosition);
-      }
-    } else if (tracks.isNotEmpty) {
-      // Fallback to the first track if no playlist URI is available
-      opened = await _openSpotifyUri(tracks.first.spotifyUri);
-    }
+    opened = await _openSpotifyUri(tracks.first.spotifyUri);
 
     if (!mounted) return;
     if (!opened) {
@@ -174,7 +141,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
                 : widget.args.playlist.imageAsset,
         trackBpm: displayTrack?.bpm ?? widget.args.playlist.bpm,
         userCadence: widget.args.userCadence,
-        spotifyUri: playlistUri ?? displayTrack?.spotifyUri,
+        spotifyUri: displayTrack?.spotifyUri,
         allowedTrackUris: tracks
             .map((track) => track.spotifyUri)
             .where((uri) => uri.isNotEmpty)
@@ -183,19 +150,13 @@ class _PlaylistPageState extends State<PlaylistPage> {
     );
   }
 
-  Future<void> _skipToPlaylistPosition(int position) async {
-    for (var i = 0; i < position; i++) {
-      await SpotifyRemoteService.instance.skipNext();
-      await Future<void>.delayed(const Duration(milliseconds: 120));
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final playlist = widget.args.playlist;
     final auth = AuthScope.watch(context);
     final tracks = auth.tracksForPlaylist(playlist.id);
     final isLoadingTracks = auth.isLoadingTracksForPlaylist(playlist.id);
+    final trackLoadError = auth.trackErrorForPlaylist(playlist.id);
 
     return Scaffold(
       body: Stack(
@@ -217,7 +178,13 @@ class _PlaylistPageState extends State<PlaylistPage> {
                     children: [
                       _RoundIconButton(
                         icon: Icons.arrow_back_ios_new_rounded,
-                        onTap: () => Navigator.of(context).maybePop(),
+                        onTap: () {
+                          if (context.canPop()) {
+                            context.pop();
+                          } else {
+                            context.go('/home');
+                          }
+                        },
                       ),
                       const Spacer(),
                       const Text(
@@ -290,7 +257,9 @@ class _PlaylistPageState extends State<PlaylistPage> {
                   _PlaylistTrackSection(
                     tracks: tracks,
                     isLoading: isLoadingTracks,
+                    loadError: trackLoadError,
                     onPlayTrack: _playTrack,
+                    onRetry: () => auth.loadTracksForPlaylist(playlist.id),
                   ),
                 ],
               ),
@@ -432,12 +401,16 @@ class _PlaylistTrackSection extends StatelessWidget {
   const _PlaylistTrackSection({
     required this.tracks,
     required this.isLoading,
+    required this.loadError,
     required this.onPlayTrack,
+    required this.onRetry,
   });
 
   final List<SpotifyTrack> tracks;
   final bool isLoading;
+  final String? loadError;
   final Future<void> Function(SpotifyTrack track) onPlayTrack;
+  final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -478,6 +451,31 @@ class _PlaylistTrackSection extends StatelessWidget {
                   color: AppColors.primaryBright,
                 ),
               ),
+            )
+          else if (loadError != null && loadError!.isNotEmpty)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  loadError!,
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 13,
+                    height: 1.4,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextButton.icon(
+                  onPressed: onRetry,
+                  icon: const Icon(Icons.refresh_rounded, size: 18),
+                  label: const Text('Retry'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.primaryBright,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                  ),
+                ),
+              ],
             )
           else if (tracks.isEmpty)
             const Text(
