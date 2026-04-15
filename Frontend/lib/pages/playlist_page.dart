@@ -49,33 +49,47 @@ class _PlaylistPageState extends State<PlaylistPage> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (_requestedTracks) return;
+    final auth = AuthScope.watch(context);
+    if (auth.accessToken == null || auth.accessToken!.isEmpty) return;
     _requestedTracks = true;
-    AuthScope.read(context).loadTracksForPlaylist(widget.args.playlist.id);
+    auth.loadTracksForPlaylist(widget.args.playlist.id);
   }
 
-  Future<void> _openSpotifyUri(String spotifyUri) async {
-    if (spotifyUri.isEmpty || _isLaunching) return;
+  Future<bool> _openSpotifyUri(String spotifyUri) async {
+    if (spotifyUri.isEmpty || _isLaunching) return false;
     setState(() => _isLaunching = true);
 
     try {
       final remotePlayed = await SpotifyRemoteService.instance.playUri(
         spotifyUri,
       );
-      if (!remotePlayed) {
-        // Fallback: open in Spotify app or web browser
-        final webUrl = _webUrlFromSpotifyUri(spotifyUri);
-        final webUri = Uri.parse(webUrl);
-        await launchUrl(webUri, mode: LaunchMode.externalApplication);
+      if (remotePlayed) {
+        return true;
       }
+
+      final openedInSpotifyApp = await _openInSpotifyApp(spotifyUri);
+      if (openedInSpotifyApp) {
+        return true;
+      }
+
+      final webUrl = _webUrlFromSpotifyUri(spotifyUri);
+      final webUri = Uri.parse(webUrl);
+      return await launchUrl(webUri, mode: LaunchMode.externalApplication);
     } catch (e) {
-      // Last resort: try web URL
+      final openedInSpotifyApp = await _openInSpotifyApp(spotifyUri);
+      if (openedInSpotifyApp) {
+        return true;
+      }
       try {
         final webUrl = _webUrlFromSpotifyUri(spotifyUri);
-        await launchUrl(
+        return await launchUrl(
           Uri.parse(webUrl),
           mode: LaunchMode.externalApplication,
         );
-      } catch (_) {}
+      } catch (_) {
+        debugPrint('Failed to open Spotify URI: $spotifyUri ($e)');
+        return false;
+      }
     } finally {
       if (mounted) {
         setState(() => _isLaunching = false);
@@ -84,20 +98,67 @@ class _PlaylistPageState extends State<PlaylistPage> {
   }
 
   Future<void> _playTrack(SpotifyTrack track) async {
-    await _openSpotifyUri(track.spotifyUri);
+    final playlistUri = widget.args.playlist.spotifyUri;
+    if (playlistUri != null &&
+        playlistUri.isNotEmpty &&
+        track.playlistPosition >= 0) {
+      if (_isLaunching) return;
+      setState(() => _isLaunching = true);
+      try {
+        final remotePlayed = await SpotifyRemoteService.instance.playUri(
+          playlistUri,
+        );
+        if (remotePlayed) {
+          await _skipToPlaylistPosition(track.playlistPosition);
+          return;
+        }
+      } catch (_) {
+        // Fall back to opening the selected track URI below.
+      } finally {
+        if (mounted) {
+          setState(() => _isLaunching = false);
+        }
+      }
+    }
+
+    final opened = await _openSpotifyUri(track.spotifyUri);
+    if (!opened || !mounted) return;
   }
 
   Future<void> _startSession(List<SpotifyTrack> tracks) async {
     // Play the PLAYLIST context so all tracks play in order within the playlist
     final playlistUri = widget.args.playlist.spotifyUri;
+    bool opened = false;
+    if (tracks.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No tracks in 90-110 BPM were found for this playlist.'),
+        ),
+      );
+      return;
+    }
+
     if (playlistUri != null && playlistUri.isNotEmpty) {
-      await _openSpotifyUri(playlistUri);
+      opened = await _openSpotifyUri(playlistUri);
+      if (opened && tracks.first.playlistPosition > 0) {
+        await _skipToPlaylistPosition(tracks.first.playlistPosition);
+      }
     } else if (tracks.isNotEmpty) {
       // Fallback to the first track if no playlist URI is available
-      await _openSpotifyUri(tracks.first.spotifyUri);
+      opened = await _openSpotifyUri(tracks.first.spotifyUri);
     }
 
     if (!mounted) return;
+    if (!opened) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Could not start playback. Open Spotify on your phone and try again.',
+          ),
+        ),
+      );
+      return;
+    }
 
     final displayTrack = tracks.isNotEmpty ? tracks.first : null;
     context.push(
@@ -114,8 +175,19 @@ class _PlaylistPageState extends State<PlaylistPage> {
         trackBpm: displayTrack?.bpm ?? widget.args.playlist.bpm,
         userCadence: widget.args.userCadence,
         spotifyUri: playlistUri ?? displayTrack?.spotifyUri,
+        allowedTrackUris: tracks
+            .map((track) => track.spotifyUri)
+            .where((uri) => uri.isNotEmpty)
+            .toList(growable: false),
       ),
     );
+  }
+
+  Future<void> _skipToPlaylistPosition(int position) async {
+    for (var i = 0; i < position; i++) {
+      await SpotifyRemoteService.instance.skipNext();
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+    }
   }
 
   @override
@@ -417,13 +489,18 @@ class _PlaylistTrackSection extends StatelessWidget {
                 fontWeight: FontWeight.w600,
               ),
             )
-          else
-            ...tracks.take(12).map(
-              (track) => Padding(
+          else ...(() {
+            final visibleTracks = tracks.take(12).toList(growable: false);
+            return visibleTracks.asMap().entries.map(
+              (entry) => Padding(
                 padding: const EdgeInsets.only(bottom: 12),
-                child: _SpotifyTrackRow(track: track, onPlay: onPlayTrack),
+                child: _SpotifyTrackRow(
+                  track: entry.value,
+                  onPlay: () => onPlayTrack(entry.value),
+                ),
               ),
-            ),
+            );
+          })(),
         ],
       ),
     );
@@ -434,7 +511,7 @@ class _SpotifyTrackRow extends StatelessWidget {
   const _SpotifyTrackRow({required this.track, required this.onPlay});
 
   final SpotifyTrack track;
-  final Future<void> Function(SpotifyTrack track) onPlay;
+  final VoidCallback onPlay;
 
   @override
   Widget build(BuildContext context) {
@@ -491,7 +568,7 @@ class _SpotifyTrackRow extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               GestureDetector(
-                onTap: () => onPlay(track),
+                onTap: onPlay,
                 child: Container(
                   width: 38,
                   height: 38,
@@ -604,6 +681,14 @@ String _webUrlFromSpotifyUri(String spotifyUri) {
     return 'https://open.spotify.com/${segments[1]}/${segments[2]}';
   }
   return 'https://open.spotify.com/';
+}
+
+Future<bool> _openInSpotifyApp(String spotifyUri) async {
+  try {
+    return await SpotifyRemoteService.instance.openUriInSpotifyApp(spotifyUri);
+  } catch (_) {
+    return false;
+  }
 }
 
 String _formatDuration(int durationMs) {

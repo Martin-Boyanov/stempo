@@ -21,3 +21,17 @@ class SongBpmResponse(BaseModel):
     time_signature: int | None = None
     danceability: float | None = None
     energy: float | None = None
+
+
+class SongBpmBatchRequest(BaseModel):
+    spotify_ids: list[str]
+
+
+class SongBpmBatchItem(BaseModel):
+    spotify_id: str
+    tempo: float | None = None
+    found: bool = False
+
+
+class SongBpmBatchResponse(BaseModel):
+    items: list[SongBpmBatchItem]

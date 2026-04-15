@@ -20,7 +20,13 @@ class SpotifyAuthController extends ChangeNotifier {
   static const _clientIdKey = 'SPOTIFY_CLIENT_ID';
   static const _redirectUriKey = 'SPOTIFY_REDIRECT_URI';
   static const _defaultRedirectUri = 'stempo://spotify-callback';
+  static const _defaultBackendBaseUrl = 'http://10.0.2.2:8010';
+  static const _assumedWalkingBpm = 100;
+  static const _walkingBpmTolerance = 10;
+  static const _backendRequestTimeout = Duration(seconds: 8);
+  static const _spotifyRequestTimeout = Duration(seconds: 12);
   static const _scopes = [
+    'app-remote-control',
     'user-read-private',
     'user-read-email',
     'playlist-read-private',
@@ -83,6 +89,8 @@ class SpotifyAuthController extends ChangeNotifier {
   String get _clientId => dotenv.env[_clientIdKey] ?? '';
   String get _redirectUri =>
       dotenv.env[_redirectUriKey] ?? _defaultRedirectUri;
+  String get _backendBaseUrl =>
+      (dotenv.env['BACKEND_BASE_URL'] ?? _defaultBackendBaseUrl).trim();
   Future<bool> connectWithSpotifyPkce() async {
     final clientId = _clientId;
 
@@ -408,18 +416,36 @@ class SpotifyAuthController extends ChangeNotifier {
   }
 
   Future<void> loadTracksForPlaylist(String playlistId) async {
+    final cachedTracks = _playlistTracks[playlistId];
     if (_accessToken == null ||
         playlistId.isEmpty ||
-        _playlistTracks.containsKey(playlistId) ||
+        (cachedTracks != null && cachedTracks.isNotEmpty) ||
         _loadingPlaylistIds.contains(playlistId)) {
       return;
     }
 
     final cached = findPlaylistById(playlistId);
-    final realId = (playlistId.startsWith('search-') ||
-            playlistId.startsWith('recent-'))
-        ? (cached?.spotifyUri?.split(':').last ?? playlistId)
-        : playlistId;
+    final spotifyUri = cached?.spotifyUri;
+    String realId = playlistId;
+    if (spotifyUri != null && spotifyUri.isNotEmpty) {
+      if (spotifyUri.startsWith('spotify:playlist:')) {
+        realId = spotifyUri.split(':').last;
+      } else {
+        final spotifyUriParsed = Uri.tryParse(spotifyUri);
+        if (spotifyUriParsed != null &&
+            (spotifyUriParsed.host == 'open.spotify.com' ||
+                spotifyUriParsed.host == 'play.spotify.com')) {
+          final segments = spotifyUriParsed.pathSegments
+              .where((segment) => segment.isNotEmpty)
+              .toList(growable: false);
+          if (segments.length >= 2 && segments.first == 'playlist') {
+            realId = segments[1];
+          }
+        }
+      }
+    } else if (playlistId.startsWith('search-') || playlistId.startsWith('recent-')) {
+      realId = playlistId;
+    }
 
     if (realId.isEmpty) return;
 
@@ -431,15 +457,39 @@ class SpotifyAuthController extends ChangeNotifier {
         'https://api.spotify.com/v1/playlists/$realId/tracks?limit=50',
       );
       final items = json['items'] as List<dynamic>? ?? const [];
-      final tracks = items
+      final rawTracks = items
           .whereType<Map<String, dynamic>>()
-          .map((item) => item['track'])
-          .whereType<Map<String, dynamic>>()
-          .where((track) => (track['type'] as String?) == 'track')
-          .map(spotifyTrackFromJson)
-          .where((track) => track.spotifyUri.isNotEmpty)
+          .toList(growable: false)
+          .asMap()
+          .entries
+          .map((entry) => (index: entry.key, item: entry.value))
+          .map((entry) => (
+                index: entry.index,
+                track: entry.item['track'],
+              ))
+          .where((entry) => entry.track is Map<String, dynamic>)
+          .map((entry) => (
+                index: entry.index,
+                track: entry.track as Map<String, dynamic>,
+              ))
+          .where((entry) => (entry.track['type'] as String?) == 'track')
+          .map(
+            (entry) => spotifyTrackFromJson(
+              entry.track,
+              playlistPosition: entry.index,
+            ),
+          )
+          .where((track) => track.spotifyUri.isNotEmpty && track.id.isNotEmpty)
           .toList(growable: false);
-      _playlistTracks[playlistId] = tracks;
+
+      final minBpm = _assumedWalkingBpm - _walkingBpmTolerance;
+      final maxBpm = _assumedWalkingBpm + _walkingBpmTolerance;
+      final filteredTracks = await _filterTracksByBpm(
+        tracks: rawTracks,
+        minBpm: minBpm,
+        maxBpm: maxBpm,
+      );
+      _playlistTracks[playlistId] = filteredTracks;
     } catch (_) {
       _errorMessage = 'Could not load tracks for this playlist yet.';
     } finally {
@@ -448,13 +498,98 @@ class SpotifyAuthController extends ChangeNotifier {
     }
   }
 
-  Future<Map<String, dynamic>> _getJson(String url) async {
-    final client = HttpClient();
+  Future<List<SpotifyTrack>> _filterTracksByBpm({
+    required List<SpotifyTrack> tracks,
+    required int minBpm,
+    required int maxBpm,
+  }) async {
+    final uniqueTrackIds = tracks
+        .map((track) => track.id)
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+    final bpmByTrackId = await _fetchTrackBpmsBatch(uniqueTrackIds);
+
+    final resolvedTracks = tracks.map((track) {
+      final bpm = bpmByTrackId[track.id];
+      if (bpm == null || bpm < minBpm || bpm > maxBpm) {
+        return null;
+      }
+      return SpotifyTrack(
+        id: track.id,
+        title: track.title,
+        artistLine: track.artistLine,
+        imageUrl: track.imageUrl,
+        spotifyUri: track.spotifyUri,
+        durationMs: track.durationMs,
+        bpm: bpm.round(),
+        playlistPosition: track.playlistPosition,
+      );
+    }).toList(growable: false);
+    return resolvedTracks.whereType<SpotifyTrack>().toList(growable: false);
+  }
+
+  Future<Map<String, double?>> _fetchTrackBpmsBatch(
+    List<String> spotifyIds,
+  ) async {
+    if (_accessToken == null ||
+        spotifyIds.isEmpty ||
+        _backendBaseUrl.isEmpty) {
+      return <String, double?>{};
+    }
+
+    final client = HttpClient()..connectionTimeout = _backendRequestTimeout;
     try {
-      final request = await client.getUrl(Uri.parse(url));
+      final uri = Uri.parse('$_backendBaseUrl/soundcharts/song/bpm/batch');
+      final request = await client.postUrl(uri).timeout(_backendRequestTimeout);
+      request.headers.contentType = ContentType.json;
+      request.headers.set(
+        HttpHeaders.authorizationHeader,
+        'Bearer $_accessToken',
+      );
+      request.write(
+        jsonEncode({'spotify_ids': spotifyIds}),
+      );
+      final response = await request.close().timeout(_backendRequestTimeout);
+      final payload = await response
+          .transform(utf8.decoder)
+          .join()
+          .timeout(_backendRequestTimeout);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return <String, double?>{};
+      }
+
+      final json = jsonDecode(payload);
+      if (json is! Map<String, dynamic>) return <String, double?>{};
+      final items = json['items'];
+      if (items is! List) return <String, double?>{};
+      final bpmById = <String, double?>{};
+      for (final item in items.whereType<Map<String, dynamic>>()) {
+        final spotifyId = item['spotify_id'] as String? ?? '';
+        if (spotifyId.isEmpty) continue;
+        final tempo = item['tempo'];
+        bpmById[spotifyId] = tempo is num ? tempo.toDouble() : null;
+      }
+      return bpmById;
+    } catch (_) {
+      return <String, double?>{};
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  Future<Map<String, dynamic>> _getJson(String url) async {
+    final client = HttpClient()..connectionTimeout = _spotifyRequestTimeout;
+    try {
+      final request = await client
+          .getUrl(Uri.parse(url))
+          .timeout(_spotifyRequestTimeout);
       request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_accessToken');
-      final response = await request.close();
-      final payload = await response.transform(utf8.decoder).join();
+      final response = await request.close().timeout(_spotifyRequestTimeout);
+      final payload = await response
+          .transform(utf8.decoder)
+          .join()
+          .timeout(_spotifyRequestTimeout);
       final json = jsonDecode(payload);
 
       if (response.statusCode < 200 || response.statusCode >= 300 || json is! Map<String, dynamic>) {

@@ -68,6 +68,7 @@ class SpotifyRemoteService {
   );
 
   Stream<SpotifyRemotePlayerState>? _playerStateStream;
+  static const Duration _channelTimeout = Duration(seconds: 8);
 
   String get _clientId => dotenv.env['SPOTIFY_CLIENT_ID'] ?? '';
   String get _redirectUri =>
@@ -88,20 +89,47 @@ class SpotifyRemoteService {
 
   Future<bool> connect({bool showAuthView = true}) async {
     if (!hasConfig) return false;
-    final result = await _methodChannel.invokeMethod<bool>('connect', {
-      ..._credentials,
-      'showAuthView': showAuthView,
-    });
-    return result ?? false;
+    try {
+      final result = await _methodChannel
+          .invokeMethod<bool>('connect', {
+            ..._credentials,
+            'showAuthView': showAuthView,
+          })
+          .timeout(_channelTimeout);
+      return result ?? false;
+    } on TimeoutException {
+      return false;
+    }
   }
 
   Future<bool> playUri(String spotifyUri) async {
     if (!hasConfig || spotifyUri.isEmpty) return false;
-    final result = await _methodChannel.invokeMethod<bool>('playUri', {
-      ..._credentials,
-      'uri': spotifyUri,
-    });
-    return result ?? false;
+    try {
+      final result = await _methodChannel
+          .invokeMethod<bool>('playUri', {
+            ..._credentials,
+            'uri': spotifyUri,
+          })
+          .timeout(_channelTimeout);
+      return result ?? false;
+    } on TimeoutException {
+      return false;
+    }
+  }
+
+  Future<bool> openUriInSpotifyApp(String spotifyUri) async {
+    if (spotifyUri.isEmpty) return false;
+    try {
+      final result = await _methodChannel
+          .invokeMethod<bool>(
+            'openUriInSpotifyApp',
+            {'uri': spotifyUri},
+          )
+          .timeout(_channelTimeout);
+      return result ?? false;
+    } on TimeoutException {
+      return false;
+    }
   }
 
   Future<void> pause() => _methodChannel.invokeMethod<void>('pause');

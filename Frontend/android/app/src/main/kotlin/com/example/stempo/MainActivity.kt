@@ -1,5 +1,7 @@
 package com.example.stempo
 
+import android.content.Intent
+import android.net.Uri
 import android.util.Log
 import com.spotify.android.appremote.api.ConnectionParams
 import com.spotify.android.appremote.api.Connector
@@ -63,13 +65,14 @@ class MainActivity : FlutterFragmentActivity() {
             "connect" -> {
                 val clientId = call.argument<String>("clientId")
                 val redirectUri = call.argument<String>("redirectUri")
+                val showAuthView = call.argument<Boolean>("showAuthView") ?: true
                 if (clientId.isNullOrBlank() || redirectUri.isNullOrBlank()) {
                     result.error("invalid_args", "Spotify client ID or redirect URI is missing.", null)
                     return
                 }
                 spotifyClientId = clientId
                 spotifyRedirectUri = redirectUri
-                connectToSpotify(clientId, redirectUri, result)
+                connectToSpotify(clientId, redirectUri, showAuthView, result)
             }
 
             "playUri" -> {
@@ -181,8 +184,81 @@ class MainActivity : FlutterFragmentActivity() {
                 result.success(true)
             }
 
+            "openUriInSpotifyApp" -> {
+                val uri = call.argument<String>("uri")
+                if (uri.isNullOrBlank()) {
+                    result.error("invalid_args", "Missing URI.", null)
+                    return
+                }
+                openUriInSpotifyApp(uri, result)
+            }
+
             else -> result.notImplemented()
         }
+    }
+
+    private fun openUriInSpotifyApp(
+        uri: String,
+        result: MethodChannel.Result,
+    ) {
+        val spotifyUri = normalizeSpotifyUri(uri)
+        val primaryIntent = Intent(Intent.ACTION_VIEW, Uri.parse(spotifyUri)).apply {
+            setPackage("com.spotify.music")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+
+        val canHandlePrimary = primaryIntent.resolveActivity(packageManager) != null
+        if (canHandlePrimary) {
+            try {
+                startActivity(primaryIntent)
+                result.success(true)
+                return
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed opening Spotify URI in app: $spotifyUri (${e.message})")
+            }
+        }
+
+        val fallbackWeb = spotifyWebUrlFromUri(spotifyUri) ?: run {
+            result.success(false)
+            return
+        }
+        val fallbackIntent = Intent(Intent.ACTION_VIEW, Uri.parse(fallbackWeb)).apply {
+            setPackage("com.spotify.music")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+
+        val canHandleFallback = fallbackIntent.resolveActivity(packageManager) != null
+        if (!canHandleFallback) {
+            result.success(false)
+            return
+        }
+
+        try {
+            startActivity(fallbackIntent)
+            result.success(true)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed opening Spotify web URL in app: $fallbackWeb (${e.message})")
+            result.success(false)
+        }
+    }
+
+    private fun normalizeSpotifyUri(raw: String): String {
+        if (raw.startsWith("spotify:")) return raw
+        val parsed = Uri.parse(raw)
+        if (parsed.host == "open.spotify.com" || parsed.host == "play.spotify.com") {
+            val segments = parsed.pathSegments.filter { it.isNotBlank() }
+            if (segments.size >= 2) {
+                return "spotify:${segments[0]}:${segments[1]}"
+            }
+        }
+        return raw
+    }
+
+    private fun spotifyWebUrlFromUri(spotifyUri: String): String? {
+        if (!spotifyUri.startsWith("spotify:")) return null
+        val segments = spotifyUri.split(":")
+        if (segments.size < 3) return null
+        return "https://open.spotify.com/${segments[1]}/${segments[2]}"
     }
 
     private fun ensureConnectionAndExecute(
@@ -223,6 +299,7 @@ class MainActivity : FlutterFragmentActivity() {
     private fun connectToSpotify(
         clientId: String,
         redirectUri: String,
+        showAuthView: Boolean,
         result: MethodChannel.Result,
     ) {
         // If already connected, return immediately
@@ -234,7 +311,7 @@ class MainActivity : FlutterFragmentActivity() {
 
         val params = ConnectionParams.Builder(clientId)
             .setRedirectUri(redirectUri)
-            .showAuthView(true)
+            .showAuthView(showAuthView)
             .build()
 
         SpotifyAppRemote.connect(this, params, object : Connector.ConnectionListener {
@@ -246,7 +323,15 @@ class MainActivity : FlutterFragmentActivity() {
             }
 
             override fun onFailure(throwable: Throwable) {
-                Log.e(TAG, "Spotify App Remote connection failed: ${throwable.message}")
+                Log.e(
+                    TAG,
+                    "Spotify App Remote connection failed (showAuthView=$showAuthView): " +
+                        "${throwable::class.java.name}: ${throwable.message} / ${throwable}",
+                )
+                if (!showAuthView) {
+                    connectToSpotify(clientId, redirectUri, true, result)
+                    return
+                }
                 result.success(false)
             }
         })
@@ -270,10 +355,27 @@ class MainActivity : FlutterFragmentActivity() {
             return
         }
 
-        // Not connected yet – connect first, then play
+        connectThenPlay(
+            clientId = clientId,
+            redirectUri = redirectUri,
+            uri = uri,
+            showAuthView = false,
+            allowAuthRetry = true,
+            result = result,
+        )
+    }
+
+    private fun connectThenPlay(
+        clientId: String,
+        redirectUri: String,
+        uri: String,
+        showAuthView: Boolean,
+        allowAuthRetry: Boolean,
+        result: MethodChannel.Result,
+    ) {
         val params = ConnectionParams.Builder(clientId)
             .setRedirectUri(redirectUri)
-            .showAuthView(true)
+            .showAuthView(showAuthView)
             .build()
 
         SpotifyAppRemote.connect(this, params, object : Connector.ConnectionListener {
@@ -290,7 +392,22 @@ class MainActivity : FlutterFragmentActivity() {
             }
 
             override fun onFailure(throwable: Throwable) {
-                Log.e(TAG, "Connect-then-play failed: ${throwable.message}")
+                Log.e(
+                    TAG,
+                    "Connect-then-play failed (showAuthView=$showAuthView): " +
+                        "${throwable::class.java.name}: ${throwable.message} / ${throwable}",
+                )
+                if (!showAuthView && allowAuthRetry) {
+                    connectThenPlay(
+                        clientId = clientId,
+                        redirectUri = redirectUri,
+                        uri = uri,
+                        showAuthView = true,
+                        allowAuthRetry = false,
+                        result = result,
+                    )
+                    return
+                }
                 result.success(false)
             }
         })

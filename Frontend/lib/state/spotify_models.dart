@@ -26,6 +26,7 @@ class SpotifyTrack {
     required this.spotifyUri,
     required this.durationMs,
     required this.bpm,
+    this.playlistPosition = -1,
   });
 
   final String id;
@@ -35,6 +36,7 @@ class SpotifyTrack {
   final String spotifyUri;
   final int durationMs;
   final int bpm;
+  final int playlistPosition;
 }
 
 class SpotifySearchEntry {
@@ -94,7 +96,10 @@ TempoPlaylist spotifyPlaylistToTempoPlaylist({
   );
 }
 
-SpotifyTrack spotifyTrackFromJson(Map<String, dynamic> trackJson) {
+SpotifyTrack spotifyTrackFromJson(
+  Map<String, dynamic> trackJson, {
+  int playlistPosition = -1,
+}) {
   final album = trackJson['album'] as Map<String, dynamic>? ?? const {};
   final images = album['images'] as List<dynamic>? ?? const [];
   final firstImage = images.isNotEmpty ? images.first as Map<String, dynamic>? : null;
@@ -114,6 +119,7 @@ SpotifyTrack spotifyTrackFromJson(Map<String, dynamic> trackJson) {
     spotifyUri: trackJson['uri'] as String? ?? '',
     durationMs: (trackJson['duration_ms'] as num?)?.toInt() ?? 0,
     bpm: _deriveBpm(id, title),
+    playlistPosition: playlistPosition,
   );
 }
 

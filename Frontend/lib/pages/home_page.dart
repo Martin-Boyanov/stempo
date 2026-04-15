@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:go_router/go_router.dart';
 import 'package:pedometer/pedometer.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -50,7 +51,6 @@ class _HomePageState extends State<HomePage>
 
   late final AnimationController _pulseController;
   final StepService _stepService = StepService();
-  Timer? _stepsRefreshTimer;
   int _selectedTab = 0;
   int _userCadence = 108;
   int _todaySteps = 0;
@@ -62,7 +62,10 @@ class _HomePageState extends State<HomePage>
 
   List<TempoPlaylist> get _recentPlaylists {
     final auth = AuthScope.read(context);
-    final source = auth.playlists.isEmpty ? mockTempoPlaylists : auth.playlists;
+    final source =
+        auth.playlists.isEmpty && !auth.isConnected
+            ? mockTempoPlaylists
+            : auth.playlists;
     return source
         .where((playlist) => playlist.wasRecentlyPlayed)
         .toList(growable: false);
@@ -74,9 +77,12 @@ class _HomePageState extends State<HomePage>
   int get _syncGap => (_mockState.trackBpm - _userCadence).abs();
 
   _StatsSnapshot get _statsSnapshot => _buildStatsSnapshot(
-    playlists: AuthScope.read(context).playlists.isEmpty
-        ? mockTempoPlaylists
-        : AuthScope.read(context).playlists,
+    playlists: (() {
+      final auth = AuthScope.read(context);
+      if (auth.playlists.isNotEmpty) return auth.playlists;
+      if (!auth.isConnected) return mockTempoPlaylists;
+      return const <TempoPlaylist>[];
+    })(),
     userCadence: _userCadence,
     todaySteps: _todaySteps + _liveAddedSteps,
     goalSteps: _mockState.goalSteps,
@@ -193,10 +199,6 @@ class _HomePageState extends State<HomePage>
     )..repeat(reverse: true);
     _refreshTodaySteps();
     _initLiveTracking();
-    _stepsRefreshTimer = Timer.periodic(
-      const Duration(seconds: 1),
-      (_) => _refreshTodaySteps(silent: true),
-    );
     _playerSubscription =
         SpotifyRemoteService.instance.playerStateStream().listen((state) {
       if (mounted) setState(() => _playerState = state);
@@ -232,7 +234,6 @@ class _HomePageState extends State<HomePage>
 
   @override
   void dispose() {
-    _stepsRefreshTimer?.cancel();
     _stepSubscription?.cancel();
     _playerSubscription?.cancel();
     _pulseController.dispose();
@@ -346,7 +347,10 @@ class _HomePageState extends State<HomePage>
   }
 
   Widget _buildSelectedTabBody(SpotifyAuthController auth) {
-    final playlists = auth.playlists.isEmpty ? mockTempoPlaylists : auth.playlists;
+    final playlists =
+        auth.playlists.isNotEmpty
+            ? auth.playlists
+            : (auth.isConnected ? const <TempoPlaylist>[] : mockTempoPlaylists);
 
     switch (_selectedTab) {
       case 0:
@@ -2849,6 +2853,19 @@ class _NowPlayingBarState extends State<_NowPlayingBar> {
   String? _actualArtist;
   String? _actualImage;
 
+  void _setStateSafely(VoidCallback updater) {
+    if (!mounted) return;
+    final phase = SchedulerBinding.instance.schedulerPhase;
+    if (phase == SchedulerPhase.idle ||
+        phase == SchedulerPhase.postFrameCallbacks) {
+      setState(updater);
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(updater);
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -2864,7 +2881,7 @@ class _NowPlayingBarState extends State<_NowPlayingBar> {
   Future<void> _bindRemote() async {
     _playerSub = _remote.playerStateStream().listen((state) {
       if (!mounted) return;
-      setState(() {
+      _setStateSafely(() {
         _isPaused = state.isPaused;
         if (state.trackName.isNotEmpty) _actualTitle = state.trackName;
         if (state.artistName.isNotEmpty) _actualArtist = state.artistName;
@@ -2881,7 +2898,7 @@ class _NowPlayingBarState extends State<_NowPlayingBar> {
       await _remote.connect(showAuthView: false);
       final playerState = await _remote.getPlayerState();
       if (!mounted || playerState == null) return;
-      setState(() {
+      _setStateSafely(() {
         _isPaused = playerState.isPaused;
         if (playerState.trackName.isNotEmpty) _actualTitle = playerState.trackName;
         if (playerState.artistName.isNotEmpty) _actualArtist = playerState.artistName;

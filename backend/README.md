@@ -6,6 +6,7 @@ Backend service for song resolution and tempo data lookup through Soundcharts, w
 
 - `GET /health`
 - `GET /soundcharts/song/bpm?song_uuid=...&isrc=...&spotify_id=...`
+- `POST /soundcharts/song/bpm/batch` with body `{"spotify_ids": ["id1", "id2", ...]}`
 - `GET /soundcharts/song/{song_uuid}/bpm?isrc=...&spotify_id=...`
 - `GET /soundcharts/song?song_uuid=...&isrc=...&spotify_id=...`
 - `GET /soundcharts/song/{song_uuid}?isrc=...&spotify_id=...`
