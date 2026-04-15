@@ -209,6 +209,15 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     } catch (_) {}
   }
 
+  Color _ensureVisible(Color color) {
+    final hsl = HSLColor.fromColor(color);
+    if (hsl.lightness < 0.2) {
+      // If color is too dark, boost it to be a visible accent
+      return hsl.withLightness(0.5).withSaturation(0.8).toColor();
+    }
+    return color;
+  }
+
   Future<void> _updatePalette() async {
     final imagePath = _actualImage ?? widget.args.trackImageAsset;
     if (imagePath.isEmpty) return;
@@ -223,15 +232,21 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
         maximumColorCount: 20,
       );
       if (!mounted) return;
-      if (palette.dominantColor != null) {
-        setState(() {
-          _accentColor = palette.dominantColor!.color;
-          _secondaryColor = palette.vibrantColor?.color ?? 
-                           palette.lightVibrantColor?.color ?? 
-                           palette.mutedColor?.color ?? 
-                           AppColors.cinemaRed;
-        });
-      }
+      
+      // Prioritize vibrant swatches for the "glow" effect
+      final mainColor = palette.vibrantColor?.color ?? 
+                       palette.lightVibrantColor?.color ?? 
+                       palette.dominantColor?.color ?? 
+                       AppColors.primary;
+
+      final sideColor = palette.mutedColor?.color ?? 
+                       palette.darkVibrantColor?.color ?? 
+                       AppColors.cinemaRed;
+
+      setState(() {
+        _accentColor = _ensureVisible(mainColor);
+        _secondaryColor = _ensureVisible(sideColor);
+      });
     } catch (_) {}
   }
 
@@ -313,6 +328,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                     trackTitle: _trackTitle,
                     trackImageAsset: _actualImage ?? widget.args.trackImageAsset,
                     trackBpm: _trackBpm,
+                    glowColor: _accentColor,
                   ),
                   const SizedBox(height: 28),
                   Text(
@@ -359,12 +375,14 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                     message: _matchMessage,
                     trackBpm: _trackBpm,
                     userCadence: widget.args.userCadence,
+                    glowColor: _accentColor,
                   ),
                   const SizedBox(height: 24),
                   _ActionCard(
                     trackBpm: _trackBpm,
                     userCadence: widget.args.userCadence,
                     matchLabel: _matchLabel,
+                    glowColor: _secondaryColor,
                   ),
                 ],
               ),
@@ -404,11 +422,13 @@ class _ArtworkHero extends StatelessWidget {
     required this.trackTitle,
     required this.trackImageAsset,
     required this.trackBpm,
+    this.glowColor,
   });
 
   final String trackTitle;
   final String trackImageAsset;
   final int trackBpm;
+  final Color? glowColor;
 
   @override
   Widget build(BuildContext context) {
@@ -419,8 +439,15 @@ class _ArtworkHero extends StatelessWidget {
           borderRadius: BorderRadius.circular(34),
           boxShadow: [
             BoxShadow(
-              color: AppColors.primary.withValues(alpha: 0.24),
-              blurRadius: 42,
+              color: (glowColor ?? AppColors.primary).withValues(alpha: 0.45),
+              blurRadius: 72,
+              spreadRadius: 4,
+              offset: const Offset(0, 10),
+            ),
+            BoxShadow(
+              color: (glowColor ?? AppColors.primary).withValues(alpha: 0.22),
+              blurRadius: 110,
+              spreadRadius: 0,
               offset: const Offset(0, 18),
             ),
           ],
@@ -483,6 +510,7 @@ class _ProgressCard extends StatelessWidget {
     required this.message,
     required this.trackBpm,
     required this.userCadence,
+    this.glowColor,
   });
 
   final String matchLabel;
@@ -490,6 +518,7 @@ class _ProgressCard extends StatelessWidget {
   final String message;
   final int trackBpm;
   final int userCadence;
+  final Color? glowColor;
 
   @override
   Widget build(BuildContext context) {
@@ -497,7 +526,7 @@ class _ProgressCard extends StatelessWidget {
       radius: 30,
       padding: const EdgeInsets.all(20),
       elevated: true,
-      glowColor: AppColors.primary,
+      glowColor: glowColor ?? AppColors.primary,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -777,18 +806,20 @@ class _ActionCard extends StatelessWidget {
     required this.trackBpm,
     required this.userCadence,
     required this.matchLabel,
+    this.glowColor,
   });
 
   final int trackBpm;
   final int userCadence;
   final String matchLabel;
+  final Color? glowColor;
 
   @override
   Widget build(BuildContext context) {
     return FrostedPanel(
       radius: 30,
       padding: const EdgeInsets.all(20),
-      glowColor: AppColors.cinemaRed,
+      glowColor: glowColor ?? AppColors.cinemaRed,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
