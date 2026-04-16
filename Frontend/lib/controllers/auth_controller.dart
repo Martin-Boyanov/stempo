@@ -22,8 +22,11 @@ class SpotifyAuthController extends ChangeNotifier {
   static const _defaultRedirectUri = 'stempo://spotify-callback';
   static const _defaultAndroidBackendBaseUrl = 'http://10.0.2.2:8010';
   static const _defaultLocalBackendBaseUrl = 'http://localhost:8010';
-  static const _assumedWalkingBpm = 100;
-  static const _walkingBpmTolerance = 10;
+  static const _defaultUserCadence = 108;
+  static const _defaultBpmTolerance = 6;
+  
+  int _userCadence = _defaultUserCadence;
+  int _bpmTolerance = _defaultBpmTolerance;
   static const _backendRequestTimeout = Duration(seconds: 20);
   static const _bpmBatchChunkSize = 10;
   static const _spotifyRequestTimeout = Duration(seconds: 12);
@@ -71,6 +74,22 @@ class SpotifyAuthController extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   SpotifyUserProfile? get profile => _profile;
   List<TempoPlaylist> get playlists => _playlists;
+  int get userCadence => _userCadence;
+  int get bpmTolerance => _bpmTolerance;
+  
+  set userCadence(int value) {
+    if (_userCadence == value) return;
+    _userCadence = value;
+    unawaited(_saveSettings());
+    notifyListeners();
+  }
+
+  set bpmTolerance(int value) {
+    if (_bpmTolerance == value) return;
+    _bpmTolerance = value;
+    unawaited(_saveSettings());
+    notifyListeners();
+  }
   final Map<String, TempoPlaylist> _playlistCache = {};
 
   TempoPlaylist? findPlaylistById(String id) {
@@ -304,6 +323,13 @@ class SpotifyAuthController extends ChangeNotifier {
     if (_expiresAt != null) {
       await prefs.setString('spotify_expires_at', _expiresAt!.toIso8601String());
     }
+    await _saveSettings();
+  }
+
+  Future<void> _saveSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('user_cadence', _userCadence);
+    await prefs.setInt('bpm_tolerance', _bpmTolerance);
   }
 
   Future<void> initialize() async {
@@ -321,6 +347,10 @@ class SpotifyAuthController extends ChangeNotifier {
     } else if (_refreshToken != null) {
       await refreshAccessToken();
     }
+    
+    _userCadence = prefs.getInt('user_cadence') ?? _defaultUserCadence;
+    _bpmTolerance = prefs.getInt('bpm_tolerance') ?? _defaultBpmTolerance;
+    
     notifyListeners();
   }
 
@@ -330,6 +360,8 @@ class SpotifyAuthController extends ChangeNotifier {
     await prefs.remove('spotify_refresh_token');
     await prefs.remove('spotify_expires_at');
     await prefs.remove('last_location');
+    await prefs.remove('user_cadence');
+    await prefs.remove('bpm_tolerance');
   }
 
 
@@ -534,9 +566,9 @@ class SpotifyAuthController extends ChangeNotifier {
         'spotify_tracks playlist=$playlistId total=${rawTracks.length}',
       );
 
-      final usedTargetBpm = targetBpm ?? _assumedWalkingBpm;
-      final minBpm = usedTargetBpm - _walkingBpmTolerance;
-      final maxBpm = usedTargetBpm + _walkingBpmTolerance;
+      final usedTargetBpm = targetBpm ?? _userCadence;
+      final minBpm = usedTargetBpm - _bpmTolerance;
+      final maxBpm = usedTargetBpm + _bpmTolerance;
       final filteredTracks = await _filterTracksByBpm(
         tracks: rawTracks,
         minBpm: minBpm,

@@ -57,7 +57,6 @@ class _HomePageState extends State<HomePage>
   late final AnimationController _pulseController;
   final StepService _stepService = StepService();
   int _selectedTab = 0;
-  int _userCadence = 108;
   int _todaySteps = 0;
   bool _hasStepPermission = false;
   bool _isRefreshingSteps = false;
@@ -76,28 +75,29 @@ class _HomePageState extends State<HomePage>
         .toList(growable: false);
   }
 
-  RangeValues get _preferredSearchRange =>
-      RangeValues((_userCadence - 6).toDouble(), (_userCadence + 6).toDouble());
+  RangeValues _preferredSearchRange(int userCadence) =>
+      RangeValues((userCadence - 6).toDouble(), (userCadence + 6).toDouble());
 
-  int get _syncGap => (_mockState.trackBpm - _userCadence).abs();
+  int _syncGap(int userCadence) => (_mockState.trackBpm - userCadence).abs();
 
-  _StatsSnapshot get _statsSnapshot => _buildStatsSnapshot(
+  _StatsSnapshot _statsSnapshot(int userCadence) => _buildStatsSnapshot(
     playlists: (() {
       final auth = AuthScope.read(context);
       if (auth.playlists.isNotEmpty) return auth.playlists;
       if (!auth.isConnected) return mockTempoPlaylists;
       return const <TempoPlaylist>[];
     })(),
-    userCadence: _userCadence,
+    userCadence: userCadence,
     todaySteps: _todaySteps + _liveAddedSteps,
     goalSteps: _mockState.goalSteps,
     hasStepPermission: _hasStepPermission,
   );
 
   void _openPlaylist(TempoPlaylist playlist) {
+    final auth = AuthScope.read(context);
     context.push(
-      '/playlist/${playlist.id}?cadence=$_userCadence',
-      extra: PlaylistPageArgs(playlist: playlist, userCadence: _userCadence),
+      '/playlist/${playlist.id}?cadence=${auth.userCadence}',
+      extra: PlaylistPageArgs(playlist: playlist, userCadence: auth.userCadence),
     );
   }
 
@@ -110,7 +110,8 @@ class _HomePageState extends State<HomePage>
   }
 
   Future<void> _openBpmPicker() async {
-    var tempCadence = _userCadence.toDouble();
+    final auth = AuthScope.read(context);
+    var tempCadence = auth.userCadence.toDouble();
 
     final updated = await showModalBottomSheet<int>(
       context: context,
@@ -194,7 +195,7 @@ class _HomePageState extends State<HomePage>
     );
 
     if (updated != null) {
-      setState(() => _userCadence = updated);
+      AuthScope.read(context).userCadence = updated;
     }
   }
 
@@ -419,7 +420,7 @@ class _HomePageState extends State<HomePage>
                             accentColor: _songAccentColor,
                             bgColor: _songBgColor,
                             trackBpm: _mockState.trackBpm,
-                            userCadence: _userCadence,
+                            userCadence: auth.userCadence,
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -452,9 +453,9 @@ class _HomePageState extends State<HomePage>
           key: const ValueKey('home'),
           state: _mockState,
           pulse: _pulseController,
-          userCadence: _userCadence,
+          userCadence: auth.userCadence,
           todaySteps: _todaySteps + _liveAddedSteps,
-          syncGap: _syncGap,
+          syncGap: (112 - auth.userCadence).abs(), // 112 is mock track BPM
           recentPlaylists: playlists,
           onGoToLibrary: _goToLibraryTab,
           onChangeBpm: _openBpmPicker,
@@ -463,10 +464,10 @@ class _HomePageState extends State<HomePage>
         );
       case 1:
         return SearchPage(
-          targetBpm: _userCadence,
+          targetBpm: auth.userCadence,
           paceRange: RangeValues(
-            _userCadence.toDouble() - 4,
-            _userCadence.toDouble() + 4,
+            auth.userCadence.toDouble() - auth.bpmTolerance,
+            auth.userCadence.toDouble() + auth.bpmTolerance,
           ),
           recentSessions: auth.playlists
               .where((p) => p.wasRecentlyPlayed)
@@ -484,14 +485,14 @@ class _HomePageState extends State<HomePage>
         );
       case 2:
         return LibraryPage(
-          userCadence: _userCadence,
+          userCadence: auth.userCadence,
           playlists: playlists,
           profileName: auth.profile?.displayName,
         );
       case 3:
-        return _StatsTabView(snapshot: _statsSnapshot);
+        return _StatsTabView(snapshot: _statsSnapshot(auth.userCadence));
       default:
-        return _StatsTabView(snapshot: _statsSnapshot);
+        return _StatsTabView(snapshot: _statsSnapshot(auth.userCadence));
     }
   }
 }
@@ -563,13 +564,13 @@ class _HomeTabView extends StatelessWidget {
                   ),
                   const Spacer(),
                   IconButton(
-                    onPressed: () => AuthScope.read(context).disconnect(),
+                    onPressed: () => context.push('/settings'),
                     icon: const Icon(
-                      Icons.logout_rounded,
+                      Icons.settings_rounded,
                       color: AppColors.textPrimary,
                       size: 20,
                     ),
-                    tooltip: 'Logout',
+                    tooltip: 'Settings',
                   ),
                 ],
               ),
@@ -3181,6 +3182,12 @@ class _NowPlayingBarState extends State<_NowPlayingBar> {
               ),
             ),
             const SizedBox(width: 12),
+            _TrackPaceBadge(
+              trackBpm: widget.trackBpm,
+              userCadence: widget.userCadence,
+              accent: widget.accentColor,
+            ),
+            const SizedBox(width: 12),
             // Play/Pause toggle button
             GestureDetector(
               behavior: HitTestBehavior.opaque,
@@ -3211,6 +3218,63 @@ class _NowPlayingBarState extends State<_NowPlayingBar> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _TrackPaceBadge extends StatelessWidget {
+  const _TrackPaceBadge({
+    required this.trackBpm,
+    required this.userCadence,
+    required this.accent,
+  });
+
+  final int trackBpm;
+  final int userCadence;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    if (trackBpm <= 0) return const SizedBox.shrink();
+
+    final diff = (trackBpm - userCadence).abs();
+    final bool isMet = diff <= 2;
+    final color = isMet ? AppColors.primaryBright : AppColors.warning;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: color.withValues(alpha: 0.24),
+          width: 0.5,
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '$trackBpm',
+            style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              height: 1,
+            ),
+          ),
+          const SizedBox(height: 1),
+          Text(
+            'BPM',
+            style: TextStyle(
+              color: color.withValues(alpha: 0.6),
+              fontSize: 7,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.4,
+            ),
+          ),
+        ],
       ),
     );
   }

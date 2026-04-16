@@ -11,6 +11,7 @@ import '../pages/onboarding_step2_motion.dart';
 import '../pages/onboarding_step3_pace.dart';
 import '../pages/playlist_page.dart';
 import '../pages/steps_page.dart';
+import '../pages/settings_page.dart';
 
 class AppRouter {
   static const Set<String> _restorableRoutes = {
@@ -18,6 +19,7 @@ class AppRouter {
     '/motion',
     '/pace',
     '/steps',
+    '/settings',
   };
 
   static bool _isRestorableRoute(String location) =>
@@ -113,6 +115,7 @@ class AppRouter {
         },
       ),
       GoRoute(path: '/steps', builder: (context, state) => const StepsPage()),
+      GoRoute(path: '/settings', builder: (context, state) => const SettingsPage()),
     ],
   );
 }
