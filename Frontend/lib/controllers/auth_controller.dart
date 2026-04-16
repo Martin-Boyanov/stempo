@@ -460,7 +460,7 @@ class SpotifyAuthController extends ChangeNotifier {
     try {
       final profileJson = await _getJson('https://api.spotify.com/v1/me');
       final playlistsJson = await _getJson(
-        'https://api.spotify.com/v1/me/playlists?limit=20',
+        'https://api.spotify.com/v1/me/playlists?limit=50',
       );
 
       _profile = _parseProfile(profileJson);
@@ -658,6 +658,8 @@ class SpotifyAuthController extends ChangeNotifier {
         _debugTrackLoad(
           'session_playlist_reuse_existing source=${sourcePlaylist.id} playlistId=${existingPlaylist.playlistId} uri=${existingPlaylist.playlistUri}',
         );
+        // Ensure it's in our local playlists list
+        await loadUserData();
         return existingPlaylist.playlistUri;
       }
 
@@ -708,8 +710,12 @@ class SpotifyAuthController extends ChangeNotifier {
         createdAt: DateTime.now(),
       );
       _debugTrackLoad(
-        'session_playlist_ready source=${sourcePlaylist.id} uri=$playlistUri',
+        'session_playlist_create_done source=${sourcePlaylist.id} uri=$playlistUri',
       );
+
+      // Refresh playlists so the new one shows up in the UI
+      await loadUserData();
+
       return playlistUri;
     } on _ApiRequestException catch (e) {
       _debugTrackLoad(
