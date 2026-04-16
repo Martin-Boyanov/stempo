@@ -611,22 +611,6 @@ class _ArtworkHero extends StatelessWidget {
                 ),
               ),
               Positioned(
-                left: 22,
-                bottom: 20,
-                right: 22,
-                child: Text(
-                  trackTitle,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 34,
-                    height: 0.95,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              Positioned(
                 left: 30,
                 top: 36,
                 child: Icon(
