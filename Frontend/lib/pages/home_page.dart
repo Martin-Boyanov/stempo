@@ -818,7 +818,7 @@ class _StatsSummaryScreen extends StatelessWidget {
               mainAxisSpacing: 12,
               crossAxisSpacing: 12,
               physics: const NeverScrollableScrollPhysics(),
-              childAspectRatio: 1.02,
+              childAspectRatio: 0.88,
               children: [
                 for (final fact in snapshot.facts)
                   _StatsFactCard(
@@ -2166,9 +2166,8 @@ class _StatsFactCard extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       radius: 24,
       glowColor: accent,
-      child: SizedBox(
-        height: 150,
-        child: Column(
+      child: Column(
+          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
@@ -2222,7 +2221,6 @@ class _StatsFactCard extends StatelessWidget {
             ),
           ],
         ),
-      ),
     );
   }
 }
