@@ -156,116 +156,107 @@ class _PlaylistPageState extends State<PlaylistPage> {
     }
   }
 
-  Future<void> _playTrack(SpotifyTrack track) async {
-    final auth = AuthScope.read(context);
-    final tracks = auth.tracksForPlaylist(widget.args.playlist.id);
-    final range = _effectiveBpmRange;
-    final minBpm = range.min;
-    final maxBpm = range.max;
-    final sessionPlaylistUri = await auth.ensureSessionPlaylistForBpm(
-      sourcePlaylist: widget.args.playlist,
-      tracks: tracks,
-      minBpm: minBpm,
-      maxBpm: maxBpm,
-    );
+  Future<void> _handleStartSession({SpotifyTrack? startTrack}) async {
+    if (_isLaunching) return;
+    setState(() => _isLaunching = true);
 
-    var opened = false;
-    if (sessionPlaylistUri != null && sessionPlaylistUri.isNotEmpty) {
-      opened = await auth.startPlaylistPlaybackAtTrack(
-        playlistUri: sessionPlaylistUri,
-        trackUri: track.spotifyUri,
+    try {
+      final auth = AuthScope.read(context);
+      final tracks = auth.tracksForPlaylist(widget.args.playlist.id);
+
+      if (tracks.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No tracks available in the correct BPM range.'),
+            ),
+          );
+        }
+        return;
+      }
+
+      final range = _effectiveBpmRange;
+      final sessionPlaylistUri = await auth.ensureSessionPlaylistForBpm(
+        sourcePlaylist: widget.args.playlist,
+        tracks: tracks,
+        minBpm: range.min,
+        maxBpm: range.max,
       );
-    } else if ((widget.args.playlist.spotifyUri ?? '').isNotEmpty) {
-      opened = await auth.startPlaylistPlaybackAtTrack(
-        playlistUri: widget.args.playlist.spotifyUri!,
-        trackUri: track.spotifyUri,
-      );
-    }
 
-    if (!opened) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Could not jump directly to this track in playlist context. Keep Spotify active and try again.',
-          ),
-        ),
-      );
-      return;
-    }
-    if (!opened || !mounted) return;
-  }
+      bool opened = false;
+      if (sessionPlaylistUri != null && sessionPlaylistUri.isNotEmpty) {
+        if (startTrack != null) {
+          // Try to start at specific track via Connect API
+          opened = await auth.startPlaylistPlaybackAtTrack(
+            playlistUri: sessionPlaylistUri,
+            trackUri: startTrack.spotifyUri,
+          );
+        }
 
-  Future<void> _startSession(List<SpotifyTrack> tracks) async {
-    bool opened = false;
-    final range = _effectiveBpmRange;
-    final minBpm = range.min;
-    final maxBpm = range.max;
+        if (!opened) {
+          // If jump failed or no specific track, launch the playlist context
+          // We bypass _openSpotifyUri's internal state management since we manage it here
+          opened = await _openInAppOrRemote(sessionPlaylistUri);
+        }
+      } else {
+        // Fallback: Individual track if session playlist creation failed
+        final fallbackUri = startTrack?.spotifyUri ?? tracks.first.spotifyUri;
+        opened = await _openInAppOrRemote(fallbackUri);
+      }
 
-    if (tracks.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('No tracks in $minBpm-$maxBpm BPM were found for this playlist.'),
-        ),
-      );
-      return;
-    }
+      if (!mounted) return;
 
-    final auth = AuthScope.read(context);
-    final sessionPlaylistUri = await auth.ensureSessionPlaylistForBpm(
-      sourcePlaylist: widget.args.playlist,
-      tracks: tracks,
-      minBpm: minBpm,
-      maxBpm: maxBpm,
-    );
-
-    if (sessionPlaylistUri != null && sessionPlaylistUri.isNotEmpty) {
-      opened = await _openSpotifyUri(sessionPlaylistUri);
-    } else {
-      // If playlist creation failed, show a hint but keep going with the first track
-      if (mounted) {
+      if (!opened) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Note: Could not create Spotify playlist. Playing tracks individually.'),
-            duration: Duration(seconds: 2),
+            content: Text(
+              'Could not start playback. Open Spotify on your phone and try again.',
+            ),
           ),
         );
+        return;
       }
-      opened = await _openSpotifyUri(tracks.first.spotifyUri);
-    }
 
-    if (!mounted) return;
-    if (!opened) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Could not start playback. Open Spotify on your phone and try again.',
-          ),
+      // Navigate to Now Playing
+      final displayTrack = startTrack ?? tracks.first;
+      context.push(
+        '/now-playing',
+        extra: NowPlayingPageArgs(
+          trackTitle: displayTrack.title,
+          trackArtist:
+              displayTrack.artistLine,
+          trackImageAsset:
+              displayTrack.imageUrl.isNotEmpty == true
+                  ? displayTrack.imageUrl
+                  : widget.args.playlist.imageAsset,
+          trackBpm: displayTrack.bpm,
+          userCadence: widget.args.userCadence,
+          spotifyUri: sessionPlaylistUri ?? displayTrack.spotifyUri,
+          allowedTrackUris: tracks
+              .map((t) => t.spotifyUri)
+              .where((uri) => uri.isNotEmpty)
+              .toList(growable: false),
         ),
       );
-      return;
+    } finally {
+      if (mounted) {
+        setState(() => _isLaunching = false);
+      }
     }
+  }
 
-    final displayTrack = tracks.isNotEmpty ? tracks.first : null;
-    context.push(
-      '/now-playing',
-      extra: NowPlayingPageArgs(
-        trackTitle: displayTrack?.title ?? widget.args.playlist.title,
-        trackArtist:
-            displayTrack?.artistLine ??
-            '${widget.args.playlist.mood} ${widget.args.playlist.category}',
-        trackImageAsset:
-            displayTrack?.imageUrl.isNotEmpty == true
-                ? displayTrack!.imageUrl
-                : widget.args.playlist.imageAsset,
-        trackBpm: displayTrack?.bpm ?? widget.args.playlist.bpm,
-        userCadence: widget.args.userCadence,
-        spotifyUri: sessionPlaylistUri ?? displayTrack?.spotifyUri,
-        allowedTrackUris: tracks
-            .map((track) => track.spotifyUri)
-            .where((uri) => uri.isNotEmpty)
-            .toList(growable: false),
-      ),
-    );
+  /// Helper to try remote playback or deep link without setting local loading state
+  /// (since _handleStartSession already manages it)
+  Future<bool> _openInAppOrRemote(String spotifyUri) async {
+    try {
+      final remotePlayed = await SpotifyRemoteService.instance.playUri(
+        spotifyUri,
+      );
+      if (remotePlayed) return true;
+      return await _openInSpotifyApp(spotifyUri);
+    } catch (_) {
+      return await _openInSpotifyApp(spotifyUri);
+    }
   }
 
   @override
@@ -358,7 +349,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
                             child: _ActionButton(
                               label: _isLaunching ? 'Opening...' : 'Start Session',
                               filled: true,
-                              onTap: () => _startSession(tracks),
+                              onTap: () => _handleStartSession(),
                             ),
                           ),
                           const SizedBox(width: 12),
@@ -377,7 +368,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
                         tracks: tracks,
                         isLoading: isLoadingTracks,
                         loadError: trackLoadError,
-                        onPlayTrack: _playTrack,
+                        onPlayTrack: (track) => _handleStartSession(startTrack: track),
                         onRetry: () => auth.loadTracksForPlaylist(
                           playlist.id,
                           targetBpm:
