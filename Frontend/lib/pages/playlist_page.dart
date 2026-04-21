@@ -11,6 +11,7 @@ import '../state/playlist_models.dart';
 import '../state/spotify_models.dart';
 import '../ui/theme/app_fx.dart';
 import '../ui/theme/colors.dart';
+import '../ui/widgets/loader.dart';
 import '../ui/widgets/media_cover.dart';
 import 'now_playing_page.dart';
 
@@ -526,10 +527,10 @@ class _PlaylistTrackSection extends StatelessWidget {
           if (isLoading)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 12),
-              child: Center(
-                child: CircularProgressIndicator(
-                  color: AppColors.primaryBright,
-                ),
+              child: WalkingLoader(
+                title: 'Loading tracks',
+                subtitle: 'Matching this playlist to the selected BPM range.',
+                compact: true,
               ),
             )
           else if (loadError != null && loadError!.isNotEmpty)

@@ -16,6 +16,7 @@ import '../state/mock_playlists.dart';
 import '../state/playlist_models.dart';
 import '../ui/theme/app_fx.dart';
 import '../ui/theme/colors.dart';
+import '../ui/widgets/loader.dart';
 import '../ui/widgets/media_cover.dart';
 import 'library_page.dart';
 import 'now_playing_page.dart';
@@ -414,6 +415,13 @@ class _HomePageState extends State<HomePage>
   @override
   Widget build(BuildContext context) {
     final auth = AuthScope.watch(context);
+    if (auth.isConnected && auth.isLoadingData && auth.playlists.isEmpty) {
+      return const Scaffold(
+        body: WalkingLoadingScreen(
+          title: 'Gathering data',
+        ),
+      );
+    }
 
     return Scaffold(
       body: Stack(

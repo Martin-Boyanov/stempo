@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../services/step_service.dart';
 import '../ui/theme/app_fx.dart';
 import '../ui/theme/colors.dart';
+import '../ui/widgets/loader.dart';
 
 class StepsPage extends StatelessWidget {
   const StepsPage({super.key});
@@ -95,6 +96,14 @@ class _StepsViewState extends State<StepsView> {
 
   @override
   Widget build(BuildContext context) {
+    if (_loading && _steps == 0 && _errorMessage == null && !widget.embedded) {
+      return const Scaffold(
+        body: WalkingLoadingScreen(
+          title: 'Gathering data',
+        ),
+      );
+    }
+
     final content = Stack(
       fit: StackFit.expand,
       children: [
@@ -230,16 +239,11 @@ class _StepsViewState extends State<StepsView> {
     if (_loading) {
       return const SizedBox(
         key: ValueKey('loading'),
-        height: 60,
-        child: Center(
-          child: SizedBox(
-            width: 28,
-            height: 28,
-            child: CircularProgressIndicator(
-              strokeWidth: 2.8,
-              color: AppColors.primaryBright,
-            ),
-          ),
+        height: 150,
+        child: WalkingLoader(
+          title: 'Syncing',
+          subtitle: 'Bringing in your latest steps.',
+          compact: true,
         ),
       );
     }

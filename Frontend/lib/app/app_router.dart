@@ -11,6 +11,7 @@ import '../pages/onboarding_step2_motion.dart';
 import '../pages/onboarding_step3_pace.dart';
 import '../pages/playlist_page.dart';
 import '../pages/settings_page.dart';
+import '../ui/widgets/loader.dart';
 
 class AppRouter {
   static const Set<String> _restorableRoutes = {
@@ -169,6 +170,10 @@ class _SpotifyCallbackPageState extends State<_SpotifyCallbackPage> {
 
   @override
   Widget build(BuildContext context) {
-    return const OnboardingSpotify();
+    return const Scaffold(
+      body: WalkingLoadingScreen(
+        title: 'Connecting',
+      ),
+    );
   }
 }
