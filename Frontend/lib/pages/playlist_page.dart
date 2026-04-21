@@ -26,7 +26,7 @@ class PlaylistPageArgs {
   final PlaylistSourceTab sourceTab;
 }
 
-enum PlaylistSourceTab { home, search, library }
+enum PlaylistSourceTab { home, search, library, modes }
 
 class PlaylistPage extends StatefulWidget {
   const PlaylistPage({super.key, required this.args});
@@ -751,6 +751,12 @@ class _PlaylistBottomNav extends StatelessWidget {
         icon: Icons.library_music_rounded,
         targetRoute: '/home?tab=library',
         sourceTab: PlaylistSourceTab.library,
+      ),
+      const _PlaylistNavItem(
+        label: 'Modes',
+        icon: Icons.directions_run_rounded,
+        targetRoute: '/home?tab=modes',
+        sourceTab: PlaylistSourceTab.modes,
       ),
     ];
 

@@ -29,6 +29,8 @@ class AppRouter {
         return 1;
       case 'library':
         return 2;
+      case 'modes':
+        return 3;
       case 'home':
       default:
         return 0;

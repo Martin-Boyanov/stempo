@@ -37,6 +37,7 @@ class _HomePageState extends State<HomePage>
     _NavItem(label: 'Home', icon: Icons.home_rounded),
     _NavItem(label: 'Search', icon: Icons.search_rounded),
     _NavItem(label: 'Library', icon: Icons.library_music_rounded),
+    _NavItem(label: 'Modes', icon: Icons.directions_run_rounded),
   ];
 
   final _mockState = const _HomeMockState(
@@ -67,14 +68,17 @@ class _HomePageState extends State<HomePage>
     return (trackBpm - userCadence).abs();
   }
 
-  void _openPlaylist(TempoPlaylist playlist) {
+  void _openPlaylist(
+    TempoPlaylist playlist, {
+    PlaylistSourceTab sourceTab = PlaylistSourceTab.home,
+  }) {
     final auth = AuthScope.read(context);
     context.push(
       '/playlist/${playlist.id}?cadence=${auth.userCadence}',
       extra: PlaylistPageArgs(
         playlist: playlist,
         userCadence: auth.userCadence,
-        sourceTab: PlaylistSourceTab.home,
+        sourceTab: sourceTab,
       ),
     );
   }
@@ -519,6 +523,17 @@ class _HomePageState extends State<HomePage>
           playlists: playlists,
           profileName: auth.profile?.displayName,
         );
+      case 3:
+        return _ModesTabView(
+          playlists: playlists,
+          catalogEntries: auth.searchEntries
+              .map(SearchCatalogEntry.fromSpotify)
+              .toList(growable: false),
+          onOpenPlaylist: (playlist) => _openPlaylist(
+            playlist,
+            sourceTab: PlaylistSourceTab.modes,
+          ),
+        );
       default:
         return _HomeTabView(
           key: const ValueKey('home'),
@@ -668,6 +683,784 @@ class _HomeTabView extends StatelessWidget {
     );
   }
 }
+
+class _ModesTabView extends StatefulWidget {
+  const _ModesTabView({
+    required this.playlists,
+    required this.catalogEntries,
+    required this.onOpenPlaylist,
+  });
+
+  final List<TempoPlaylist> playlists;
+  final List<SearchCatalogEntry> catalogEntries;
+  final ValueChanged<TempoPlaylist> onOpenPlaylist;
+
+  @override
+  State<_ModesTabView> createState() => _ModesTabViewState();
+}
+
+class _ModesTabViewState extends State<_ModesTabView> {
+  late final PageController _pageController;
+  _ModeOption _selectedMode = _modeOptions[1];
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController();
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _chooseMode(_ModeOption mode) async {
+    setState(() => _selectedMode = mode);
+    await _pageController.animateToPage(
+      1,
+      duration: const Duration(milliseconds: 520),
+      curve: Curves.easeInOutCubicEmphasized,
+    );
+  }
+
+  Future<void> _backToChooser() {
+    return _pageController.animateToPage(
+      0,
+      duration: const Duration(milliseconds: 420),
+      curve: Curves.easeInOutCubic,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        PageView(
+          controller: _pageController,
+          physics: const NeverScrollableScrollPhysics(),
+          children: [
+            _ModesChooserScreen(
+              selectedMode: _selectedMode,
+              onChooseMode: _chooseMode,
+            ),
+            _ModesResultsScreen(
+              mode: _selectedMode,
+              playlists: widget.playlists,
+              catalogEntries: widget.catalogEntries,
+              onBack: _backToChooser,
+              onOpenPlaylist: widget.onOpenPlaylist,
+            ),
+          ],
+        ),
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 152,
+          child: Center(
+            child: FrostedPanel(
+              radius: 999,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              glowColor: AppColors.primary,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (var i = 0; i < 2; i++) ...[
+                    AnimatedBuilder(
+                      animation: _pageController,
+                      builder: (context, _) {
+                        final page = _pageController.hasClients
+                            ? (_pageController.page ?? _pageController.initialPage.toDouble())
+                            : 0.0;
+                        final isActive = (page.round() == i);
+                        return AnimatedContainer(
+                          duration: const Duration(milliseconds: 220),
+                          width: isActive ? 22 : 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(999),
+                            color: isActive
+                                ? AppColors.primaryBright
+                                : Colors.white.withValues(alpha: 0.22),
+                          ),
+                        );
+                      },
+                    ),
+                    if (i != 1) const SizedBox(width: 8),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ModesChooserScreen extends StatelessWidget {
+  const _ModesChooserScreen({
+    required this.selectedMode,
+    required this.onChooseMode,
+  });
+
+  final _ModeOption selectedMode;
+  final ValueChanged<_ModeOption> onChooseMode;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 188),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          FrostedPanel(
+            radius: 34,
+            padding: const EdgeInsets.fromLTRB(26, 24, 26, 24),
+            elevated: true,
+            glowColor: AppColors.primary,
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xB814221B), Color(0x8A111413), Color(0xCC080A09)],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 68,
+                  height: 68,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(
+                      colors: [
+                        AppColors.primaryBright.withValues(alpha: 0.78),
+                        AppColors.primary.withValues(alpha: 0.26),
+                        Colors.transparent,
+                      ],
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.directions_run_rounded,
+                    color: AppColors.textPrimary,
+                    size: 30,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  'Modes',
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 34,
+                    height: 0.96,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Choose how you are moving right now and we will only show playlists and tracks inside that BPM lane.',
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 14,
+                    height: 1.4,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    _HeaderPill(
+                      label: '${selectedMode.label} selected',
+                      accent: selectedMode.accent,
+                    ),
+                    _HeaderPill(
+                      label: selectedMode.rangeLabel,
+                      accent: AppColors.accent,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 18),
+          for (var i = 0; i < _modeOptions.length; i++) ...[
+            _ModeOptionCard(
+              mode: _modeOptions[i],
+              isSelected: _modeOptions[i] == selectedMode,
+              onTap: () => onChooseMode(_modeOptions[i]),
+            ),
+            if (i != _modeOptions.length - 1) const SizedBox(height: 12),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ModesResultsScreen extends StatelessWidget {
+  const _ModesResultsScreen({
+    required this.mode,
+    required this.playlists,
+    required this.catalogEntries,
+    required this.onBack,
+    required this.onOpenPlaylist,
+  });
+
+  final _ModeOption mode;
+  final List<TempoPlaylist> playlists;
+  final List<SearchCatalogEntry> catalogEntries;
+  final Future<void> Function() onBack;
+  final ValueChanged<TempoPlaylist> onOpenPlaylist;
+
+  List<TempoPlaylist> get _filteredPlaylists => playlists
+      .where((playlist) => mode.matches(playlist.bpm))
+      .toList(growable: false);
+
+  List<_ModeTrackEntry> get _filteredTracks {
+    final liveTracks = catalogEntries
+        .where((entry) => entry.type == SearchResultType.track)
+        .where((entry) => entry.bpm != null && mode.matches(entry.bpm!))
+        .map(
+          (entry) => _ModeTrackEntry(
+            title: entry.title,
+            artist: entry.subtitle,
+            bpm: entry.bpm ?? 0,
+            imageAsset: entry.imageUrl,
+            mood: entry.mood,
+          ),
+        )
+        .toList(growable: false);
+    if (liveTracks.isNotEmpty) return liveTracks;
+    return _fallbackModeTracks
+        .where((track) => mode.matches(track.bpm))
+        .toList(growable: false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final filteredPlaylists = _filteredPlaylists;
+    final filteredTracks = _filteredTracks;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 188),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          FrostedPanel(
+            radius: 30,
+            padding: const EdgeInsets.all(22),
+            glowColor: mode.accent,
+            elevated: true,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => onBack(),
+                      child: Container(
+                        width: 42,
+                        height: 42,
+                        decoration: AppFx.glassDecoration(
+                          radius: 16,
+                          glowColor: mode.accent,
+                        ),
+                        child: const Icon(
+                          Icons.arrow_back_ios_new_rounded,
+                          color: AppColors.textPrimary,
+                          size: 18,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            mode.label,
+                            style: const TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 28,
+                              height: 1,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            mode.description,
+                            style: const TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 13,
+                              height: 1.35,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    _HeaderPill(label: mode.rangeLabel, accent: mode.accent),
+                    _HeaderPill(
+                      label: '${filteredPlaylists.length} playlists',
+                      accent: AppColors.primaryBright,
+                    ),
+                    _HeaderPill(
+                      label: '${filteredTracks.length} tracks',
+                      accent: AppColors.warning,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 18),
+          _SectionLabel(
+            title: 'Playlists',
+            trailing: 'Filtered for ${mode.rangeLabel}',
+          ),
+          const SizedBox(height: 12),
+          if (filteredPlaylists.isEmpty)
+            const _InlineEmptyState(
+              title: 'No playlists in this mode yet',
+              subtitle: 'Try another mode or connect more Spotify playlists.',
+            )
+          else
+            Column(
+              children: [
+                for (var i = 0; i < filteredPlaylists.length; i++) ...[
+                  _ModePlaylistCard(
+                    playlist: filteredPlaylists[i],
+                    mode: mode,
+                    onTap: () => onOpenPlaylist(filteredPlaylists[i]),
+                  ),
+                  if (i != filteredPlaylists.length - 1)
+                    const SizedBox(height: 12),
+                ],
+              ],
+            ),
+          const SizedBox(height: 18),
+          _SectionLabel(
+            title: 'Tracks',
+            trailing: 'Inside the same BPM lane',
+          ),
+          const SizedBox(height: 12),
+          if (filteredTracks.isEmpty)
+            const _InlineEmptyState(
+              title: 'No track previews here yet',
+              subtitle: 'Load more playlists and this mode will fill in with songs too.',
+            )
+          else
+            Column(
+              children: [
+                for (var i = 0; i < filteredTracks.length; i++) ...[
+                  _ModeTrackCard(track: filteredTracks[i], accent: mode.accent),
+                  if (i != filteredTracks.length - 1) const SizedBox(height: 10),
+                ],
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ModeOptionCard extends StatelessWidget {
+  const _ModeOptionCard({
+    required this.mode,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  final _ModeOption mode;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: FrostedPanel(
+        radius: 28,
+        padding: const EdgeInsets.all(18),
+        glowColor: mode.accent,
+        elevated: true,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            mode.accent.withValues(alpha: isSelected ? 0.26 : 0.14),
+            AppColors.background.withValues(alpha: 0.92),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 54,
+              height: 54,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(18),
+                color: mode.accent.withValues(alpha: 0.18),
+              ),
+              child: Icon(mode.icon, color: mode.accent, size: 28),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    mode.label,
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    mode.rangeLabel,
+                    style: TextStyle(
+                      color: mode.accent,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    mode.description,
+                    style: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 13,
+                      height: 1.35,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Icon(
+              isSelected
+                  ? Icons.arrow_forward_rounded
+                  : Icons.chevron_right_rounded,
+              color: AppColors.textPrimary,
+              size: 24,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ModePlaylistCard extends StatelessWidget {
+  const _ModePlaylistCard({
+    required this.playlist,
+    required this.mode,
+    required this.onTap,
+  });
+
+  final TempoPlaylist playlist;
+  final _ModeOption mode;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: FrostedPanel(
+        radius: 24,
+        padding: const EdgeInsets.all(14),
+        glowColor: mode.accent,
+        child: Row(
+          children: [
+            MediaCover(
+              imageAsset: playlist.imageAsset,
+              size: 72,
+              borderRadius: 18,
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    playlist.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 18,
+                      height: 1.05,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    playlist.subtitle,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
+                      height: 1.35,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _HeaderPill(label: '${playlist.bpm} BPM', accent: mode.accent),
+                      _HeaderPill(
+                        label: '${playlist.trackCount} tracks',
+                        accent: AppColors.primaryBright,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ModeTrackCard extends StatelessWidget {
+  const _ModeTrackCard({required this.track, required this.accent});
+
+  final _ModeTrackEntry track;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return FrostedPanel(
+      radius: 22,
+      padding: const EdgeInsets.all(12),
+      child: Row(
+        children: [
+          MediaCover(
+            imageAsset: track.imageAsset,
+            size: 58,
+            borderRadius: 16,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  track.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  track.artist,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '${track.bpm} BPM',
+                style: TextStyle(
+                  color: accent,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                track.mood,
+                style: const TextStyle(
+                  color: AppColors.textMuted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ModeOption {
+  const _ModeOption({
+    required this.label,
+    required this.description,
+    required this.minBpm,
+    this.maxBpm,
+    required this.icon,
+    required this.accent,
+  });
+
+  final String label;
+  final String description;
+  final int minBpm;
+  final int? maxBpm;
+  final IconData icon;
+  final Color accent;
+
+  String get rangeLabel =>
+      maxBpm == null ? '$minBpm+ BPM' : '$minBpm-$maxBpm BPM';
+
+  bool matches(int bpm) {
+    if (bpm < minBpm) return false;
+    if (maxBpm == null) return true;
+    return bpm <= maxBpm!;
+  }
+}
+
+class _ModeTrackEntry {
+  const _ModeTrackEntry({
+    required this.title,
+    required this.artist,
+    required this.bpm,
+    required this.imageAsset,
+    required this.mood,
+  });
+
+  final String title;
+  final String artist;
+  final int bpm;
+  final String imageAsset;
+  final String mood;
+}
+
+const _modeOptions = [
+  _ModeOption(
+    label: 'Slow Walk',
+    description: 'Easy stride and low-key movement for the calmest walks.',
+    minBpm: 0,
+    maxBpm: 99,
+    icon: Icons.airline_stops_rounded,
+    accent: AppColors.textMuted,
+  ),
+  _ModeOption(
+    label: 'Normal Walk',
+    description: 'Comfortable everyday walking pace with steady rhythm.',
+    minBpm: 100,
+    maxBpm: 115,
+    icon: Icons.directions_walk_rounded,
+    accent: AppColors.primaryBright,
+  ),
+  _ModeOption(
+    label: 'Fast Walk',
+    description: 'Brisk walking mode with tighter cadence and more lift.',
+    minBpm: 115,
+    maxBpm: 130,
+    icon: Icons.hiking_rounded,
+    accent: AppColors.warning,
+  ),
+  _ModeOption(
+    label: 'Transition',
+    description: 'Power walk to slow jog territory when you are ramping up.',
+    minBpm: 130,
+    maxBpm: 145,
+    icon: Icons.speed_rounded,
+    accent: AppColors.accent,
+  ),
+  _ModeOption(
+    label: 'Running',
+    description: 'Locked-in running tempo for repeatable effort and rhythm.',
+    minBpm: 145,
+    maxBpm: 170,
+    icon: Icons.directions_run_rounded,
+    accent: AppColors.primary,
+  ),
+  _ModeOption(
+    label: 'Fast Running',
+    description: 'High-output pace for intense runs and quicker turnover.',
+    minBpm: 170,
+    icon: Icons.bolt_rounded,
+    accent: AppColors.cinemaRed,
+  ),
+];
+
+const _fallbackModeTracks = [
+  _ModeTrackEntry(
+    title: 'Northern Avenue',
+    artist: 'Marlow Fade',
+    bpm: 96,
+    imageAsset: 'assets/images/musicCover6.webp',
+    mood: 'Calm',
+  ),
+  _ModeTrackEntry(
+    title: 'Ocean Drive',
+    artist: 'Duke Dumont',
+    bpm: 112,
+    imageAsset: 'assets/images/musicCover5.webp',
+    mood: 'Euphoric',
+  ),
+  _ModeTrackEntry(
+    title: 'Afterlight Steps',
+    artist: 'Luma Cove',
+    bpm: 118,
+    imageAsset: 'assets/images/musicCover8.webp',
+    mood: 'Focused',
+  ),
+  _ModeTrackEntry(
+    title: 'Push Forward',
+    artist: 'Vector Bloom',
+    bpm: 128,
+    imageAsset: 'assets/images/musicCover2.webp',
+    mood: 'Driven',
+  ),
+  _ModeTrackEntry(
+    title: 'Momentum Line',
+    artist: 'Night Shift',
+    bpm: 138,
+    imageAsset: 'assets/images/musicCover7.webp',
+    mood: 'Driven',
+  ),
+  _ModeTrackEntry(
+    title: 'Seven Nation Army',
+    artist: 'The White Stripes',
+    bpm: 154,
+    imageAsset: 'assets/images/musicCover3.webp',
+    mood: 'Dark',
+  ),
+  _ModeTrackEntry(
+    title: 'Runaway Pulse',
+    artist: 'Neon Harbor',
+    bpm: 176,
+    imageAsset: 'assets/images/musicCover4.webp',
+    mood: 'Euphoric',
+  ),
+];
 
 class _StatsTabView extends StatefulWidget {
   const _StatsTabView({required this.snapshot});
