@@ -488,7 +488,11 @@ class _SearchPageState extends State<SearchPage> {
     );
     context.push(
       '/playlist/${playlist.id}?cadence=${widget.targetBpm}',
-      extra: PlaylistPageArgs(playlist: playlist, userCadence: widget.targetBpm),
+      extra: PlaylistPageArgs(
+        playlist: playlist,
+        userCadence: widget.targetBpm,
+        sourceTab: PlaylistSourceTab.search,
+      ),
     );
   }
 
@@ -517,6 +521,7 @@ class _SearchPageState extends State<SearchPage> {
       extra: PlaylistPageArgs(
         playlist: playlist,
         userCadence: widget.targetBpm,
+        sourceTab: PlaylistSourceTab.search,
       ),
     );
   }

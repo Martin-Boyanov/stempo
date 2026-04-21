@@ -10,7 +10,6 @@ import '../pages/onboarding_step1_spotify.dart';
 import '../pages/onboarding_step2_motion.dart';
 import '../pages/onboarding_step3_pace.dart';
 import '../pages/playlist_page.dart';
-import '../pages/steps_page.dart';
 import '../pages/settings_page.dart';
 
 class AppRouter {
@@ -18,12 +17,23 @@ class AppRouter {
     '/home',
     '/motion',
     '/pace',
-    '/steps',
     '/settings',
   };
 
   static bool _isRestorableRoute(String location) =>
       _restorableRoutes.contains(location);
+
+  static int _homeTabFromQuery(Uri uri) {
+    switch (uri.queryParameters['tab']) {
+      case 'search':
+        return 1;
+      case 'library':
+        return 2;
+      case 'home':
+      default:
+        return 0;
+    }
+  }
 
   static GoRouter createRouter(SpotifyAuthController auth) => GoRouter(
     refreshListenable: auth,
@@ -78,7 +88,12 @@ class AppRouter {
         path: '/pace',
         builder: (context, state) => const OnboardingPace(),
       ),
-      GoRoute(path: '/home', builder: (context, state) => const HomePage()),
+      GoRoute(
+        path: '/home',
+        builder: (context, state) => HomePage(
+          initialTab: _homeTabFromQuery(state.uri),
+        ),
+      ),
       GoRoute(
         path: '/now-playing',
         builder: (context, state) {
@@ -106,7 +121,11 @@ class AppRouter {
               final cadenceStr = state.uri.queryParameters['cadence'];
               final cadence = int.tryParse(cadenceStr ?? '') ?? 110;
               return PlaylistPage(
-                args: PlaylistPageArgs(playlist: playlist, userCadence: cadence),
+                args: PlaylistPageArgs(
+                  playlist: playlist,
+                  userCadence: cadence,
+                  sourceTab: PlaylistSourceTab.library,
+                ),
               );
             }
           }
@@ -114,7 +133,6 @@ class AppRouter {
           return const HomePage();
         },
       ),
-      GoRoute(path: '/steps', builder: (context, state) => const StepsPage()),
       GoRoute(path: '/settings', builder: (context, state) => const SettingsPage()),
     ],
   );

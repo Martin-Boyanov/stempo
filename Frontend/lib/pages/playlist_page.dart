@@ -15,11 +15,18 @@ import '../ui/widgets/media_cover.dart';
 import 'now_playing_page.dart';
 
 class PlaylistPageArgs {
-  const PlaylistPageArgs({required this.playlist, required this.userCadence});
+  const PlaylistPageArgs({
+    required this.playlist,
+    required this.userCadence,
+    this.sourceTab = PlaylistSourceTab.home,
+  });
 
   final TempoPlaylist playlist;
   final int userCadence;
+  final PlaylistSourceTab sourceTab;
 }
+
+enum PlaylistSourceTab { home, search, library }
 
 class PlaylistPage extends StatefulWidget {
   const PlaylistPage({super.key, required this.args});
@@ -393,7 +400,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      const _PlaylistBottomNav(),
+                      _PlaylistBottomNav(activeTab: widget.args.sourceTab),
                     ],
                   ),
                 ),
@@ -720,7 +727,9 @@ class _ActionButton extends StatelessWidget {
 }
 
 class _PlaylistBottomNav extends StatelessWidget {
-  const _PlaylistBottomNav();
+  const _PlaylistBottomNav({required this.activeTab});
+
+  final PlaylistSourceTab activeTab;
 
   @override
   Widget build(BuildContext context) {
@@ -728,22 +737,20 @@ class _PlaylistBottomNav extends StatelessWidget {
       const _PlaylistNavItem(
         label: 'Home',
         icon: Icons.home_rounded,
-        targetRoute: '/home',
+        targetRoute: '/home?tab=home',
+        sourceTab: PlaylistSourceTab.home,
       ),
       const _PlaylistNavItem(
         label: 'Search',
         icon: Icons.search_rounded,
-        targetRoute: '/home',
+        targetRoute: '/home?tab=search',
+        sourceTab: PlaylistSourceTab.search,
       ),
       const _PlaylistNavItem(
         label: 'Library',
         icon: Icons.library_music_rounded,
-        targetRoute: '/home',
-      ),
-      const _PlaylistNavItem(
-        label: 'Stats',
-        icon: Icons.bar_chart_rounded,
-        targetRoute: '/steps',
+        targetRoute: '/home?tab=library',
+        sourceTab: PlaylistSourceTab.library,
       ),
     ];
 
@@ -775,7 +782,7 @@ class _PlaylistBottomNav extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(16),
-                    color: i == 0
+                    color: items[i].sourceTab == activeTab
                         ? AppColors.primary.withValues(alpha: 0.15)
                         : Colors.transparent,
                   ),
@@ -785,7 +792,7 @@ class _PlaylistBottomNav extends StatelessWidget {
                       Icon(
                         items[i].icon,
                         size: 24,
-                        color: i == 0
+                        color: items[i].sourceTab == activeTab
                             ? AppColors.primary
                             : Colors.white.withValues(alpha: 0.5),
                       ),
@@ -793,11 +800,13 @@ class _PlaylistBottomNav extends StatelessWidget {
                       Text(
                         items[i].label,
                         style: TextStyle(
-                          color: i == 0
+                          color: items[i].sourceTab == activeTab
                               ? AppColors.primary
                               : Colors.white.withValues(alpha: 0.5),
                           fontSize: 11,
-                          fontWeight: i == 0 ? FontWeight.w800 : FontWeight.w600,
+                          fontWeight: items[i].sourceTab == activeTab
+                              ? FontWeight.w800
+                              : FontWeight.w600,
                         ),
                       ),
                     ],
@@ -1045,11 +1054,13 @@ class _PlaylistNavItem {
     required this.label,
     required this.icon,
     required this.targetRoute,
+    required this.sourceTab,
   });
 
   final String label;
   final IconData icon;
   final String targetRoute;
+  final PlaylistSourceTab sourceTab;
 }
 
 class _BpmRange {

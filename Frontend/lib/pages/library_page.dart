@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../state/mock_playlists.dart';
 import '../state/playlist_models.dart';
 import '../ui/theme/app_fx.dart';
 import '../ui/theme/colors.dart';
@@ -196,6 +195,7 @@ class _LibraryPageState extends State<LibraryPage> {
       extra: PlaylistPageArgs(
         playlist: playlist,
         userCadence: widget.userCadence,
+        sourceTab: PlaylistSourceTab.library,
       ),
     );
   }
@@ -354,7 +354,7 @@ class _LibraryHeader extends StatelessWidget {
                   decoration: InputDecoration(
                     hintText: 'Search library...',
                     hintStyle: TextStyle(
-                      color: AppColors.textPrimary.withOpacity(0.5),
+                      color: AppColors.textPrimary.withValues(alpha: 0.5),
                       fontSize: 24,
                       fontWeight: FontWeight.w700,
                     ),

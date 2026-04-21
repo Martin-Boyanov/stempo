@@ -23,7 +23,9 @@ import 'playlist_page.dart';
 import 'search_page.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  const HomePage({super.key, this.initialTab = 0});
+
+  final int initialTab;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -35,7 +37,6 @@ class _HomePageState extends State<HomePage>
     _NavItem(label: 'Home', icon: Icons.home_rounded),
     _NavItem(label: 'Search', icon: Icons.search_rounded),
     _NavItem(label: 'Library', icon: Icons.library_music_rounded),
-    _NavItem(label: 'Stats', icon: Icons.bar_chart_rounded),
   ];
 
   final _mockState = const _HomeMockState(
@@ -51,7 +52,7 @@ class _HomePageState extends State<HomePage>
 
   late final AnimationController _pulseController;
   final StepService _stepService = StepService();
-  int _selectedTab = 0;
+  late int _selectedTab;
   int _todaySteps = 0;
   int? _currentTrackBpm;
   String? _currentTrackBpmUri;
@@ -66,24 +67,15 @@ class _HomePageState extends State<HomePage>
     return (trackBpm - userCadence).abs();
   }
 
-  _StatsSnapshot _statsSnapshot(int userCadence) => _buildStatsSnapshot(
-    playlists: (() {
-      final auth = AuthScope.read(context);
-      if (auth.playlists.isNotEmpty) return auth.playlists;
-      if (!auth.isConnected) return mockTempoPlaylists;
-      return const <TempoPlaylist>[];
-    })(),
-    userCadence: userCadence,
-    todaySteps: _todaySteps + _liveAddedSteps,
-    goalSteps: _mockState.goalSteps,
-    hasStepPermission: _hasStepPermission,
-  );
-
   void _openPlaylist(TempoPlaylist playlist) {
     final auth = AuthScope.read(context);
     context.push(
       '/playlist/${playlist.id}?cadence=${auth.userCadence}',
-      extra: PlaylistPageArgs(playlist: playlist, userCadence: auth.userCadence),
+      extra: PlaylistPageArgs(
+        playlist: playlist,
+        userCadence: auth.userCadence,
+        sourceTab: PlaylistSourceTab.home,
+      ),
     );
   }
 
@@ -192,6 +184,7 @@ class _HomePageState extends State<HomePage>
   @override
   void initState() {
     super.initState();
+    _selectedTab = widget.initialTab.clamp(0, _tabs.length - 1);
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2200),
@@ -199,6 +192,15 @@ class _HomePageState extends State<HomePage>
     _refreshTodaySteps();
     _initLiveTracking();
     _bindRemote();
+  }
+
+  @override
+  void didUpdateWidget(covariant HomePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final nextTab = widget.initialTab.clamp(0, _tabs.length - 1);
+    if (nextTab != _selectedTab) {
+      setState(() => _selectedTab = nextTab);
+    }
   }
 
   Color _songAccentColor = AppColors.primary;
@@ -517,10 +519,21 @@ class _HomePageState extends State<HomePage>
           playlists: playlists,
           profileName: auth.profile?.displayName,
         );
-      case 3:
-        return _StatsTabView(snapshot: _statsSnapshot(auth.userCadence));
       default:
-        return _StatsTabView(snapshot: _statsSnapshot(auth.userCadence));
+        return _HomeTabView(
+          key: const ValueKey('home'),
+          state: _mockState,
+          pulse: _pulseController,
+          userCadence: auth.userCadence,
+          todaySteps: _todaySteps + _liveAddedSteps,
+          trackBpm: _currentTrackBpm ?? _mockState.trackBpm,
+          syncGap: _syncGap(auth.userCadence),
+          recentPlaylists: playlists,
+          onGoToLibrary: _goToLibraryTab,
+          onChangeBpm: _openBpmPicker,
+          onOpenPlaylist: _openPlaylist,
+          onRefreshPlaylists: _refreshPlaylistsFromSpotify,
+        );
     }
   }
 }
