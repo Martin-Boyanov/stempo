@@ -1,31 +1,26 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:go_router/go_router.dart';
 import 'package:pedometer/pedometer.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:palette_generator/palette_generator.dart';
 
+import '../controllers/auth_controller.dart';
+import '../controllers/spotify_remote_service.dart';
+import '../services/step_service.dart';
 import '../state/auth_providers.dart';
 import '../state/mock_playlists.dart';
 import '../state/playlist_models.dart';
-import '../controllers/auth_controller.dart';
-import 'dart:ui' show ImageFilter;
-import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
-import 'package:palette_generator/palette_generator.dart';
-import '../services/step_service.dart';
 import '../ui/theme/app_fx.dart';
+import '../ui/theme/colors.dart';
 import '../ui/widgets/media_cover.dart';
 import 'library_page.dart';
 import 'now_playing_page.dart';
 import 'playlist_page.dart';
 import 'search_page.dart';
-import '../ui/theme/colors.dart';
-import '../controllers/spotify_remote_service.dart';
-import '../state/spotify_models.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -58,27 +53,18 @@ class _HomePageState extends State<HomePage>
   final StepService _stepService = StepService();
   int _selectedTab = 0;
   int _todaySteps = 0;
+  int? _currentTrackBpm;
+  String? _currentTrackBpmUri;
   bool _hasStepPermission = false;
   bool _isRefreshingSteps = false;
   StreamSubscription<StepCount>? _stepSubscription;
   int? _initialPedometerCount;
   int _liveAddedSteps = 0;
 
-  List<TempoPlaylist> get _recentPlaylists {
-    final auth = AuthScope.read(context);
-    final source =
-        auth.playlists.isEmpty && !auth.isConnected
-            ? mockTempoPlaylists
-            : auth.playlists;
-    return source
-        .where((playlist) => playlist.wasRecentlyPlayed)
-        .toList(growable: false);
+  int _syncGap(int userCadence) {
+    final trackBpm = _currentTrackBpm ?? _mockState.trackBpm;
+    return (trackBpm - userCadence).abs();
   }
-
-  RangeValues _preferredSearchRange(int userCadence) =>
-      RangeValues((userCadence - 6).toDouble(), (userCadence + 6).toDouble());
-
-  int _syncGap(int userCadence) => (_mockState.trackBpm - userCadence).abs();
 
   _StatsSnapshot _statsSnapshot(int userCadence) => _buildStatsSnapshot(
     playlists: (() {
@@ -195,6 +181,7 @@ class _HomePageState extends State<HomePage>
     );
 
     if (updated != null) {
+      if (!mounted) return;
       AuthScope.read(context).userCadence = updated;
     }
   }
@@ -291,8 +278,55 @@ class _HomePageState extends State<HomePage>
           _songAccentColor = AppColors.primary;
           _songBgColor = AppColors.surfaceFloating;
           _lastTrackUri = null;
+          _currentTrackBpm = null;
+          _currentTrackBpmUri = null;
         }
       });
+      unawaited(_refreshCurrentTrackBpm(state.trackUri));
+    });
+
+    unawaited(() async {
+      try {
+        final initialState = await SpotifyRemoteService.instance.getPlayerState();
+        if (!mounted || initialState == null) return;
+        setState(() {
+          _playerState = initialState;
+          if (initialState.resolvedImageUrl != null &&
+              initialState.trackUri.isNotEmpty) {
+            _lastTrackUri = initialState.trackUri;
+            _updateSongPalette(
+              initialState.resolvedImageUrl,
+              initialState.trackUri,
+            );
+          }
+        });
+        await _refreshCurrentTrackBpm(initialState.trackUri);
+      } catch (_) {}
+    }());
+  }
+
+  Future<void> _refreshCurrentTrackBpm(String trackUri) async {
+    if (!mounted) return;
+    final trimmedUri = trackUri.trim();
+    if (trimmedUri.isEmpty) {
+      if (_currentTrackBpm != null || _currentTrackBpmUri != null) {
+        setState(() {
+          _currentTrackBpm = null;
+          _currentTrackBpmUri = null;
+        });
+      }
+      return;
+    }
+    if (_currentTrackBpmUri == trimmedUri && _currentTrackBpm != null) return;
+
+    final auth = AuthScope.read(context);
+    final resolvedBpm = await auth.resolveTrackBpm(trimmedUri);
+    if (!mounted) return;
+    if ((_playerState?.trackUri ?? '').trim() != trimmedUri) return;
+
+    setState(() {
+      _currentTrackBpmUri = trimmedUri;
+      _currentTrackBpm = resolvedBpm;
     });
   }
 
@@ -374,13 +408,6 @@ class _HomePageState extends State<HomePage>
   @override
   Widget build(BuildContext context) {
     final auth = AuthScope.watch(context);
-    final playlists = auth.playlists;
-    final pinnedPlaylists = playlists
-        .where((playlist) => playlist.isPinned)
-        .toList(growable: false);
-    final recentPlaylists = playlists
-        .where((playlist) => playlist.wasRecentlyPlayed)
-        .toList(growable: false);
 
     return Scaffold(
       body: Stack(
@@ -419,7 +446,7 @@ class _HomePageState extends State<HomePage>
                             trackImageAsset: _playerState?.resolvedImageUrl ?? '',
                             accentColor: _songAccentColor,
                             bgColor: _songBgColor,
-                            trackBpm: _mockState.trackBpm,
+                            trackBpm: _currentTrackBpm ?? _mockState.trackBpm,
                             userCadence: auth.userCadence,
                           ),
                         ),
@@ -455,7 +482,8 @@ class _HomePageState extends State<HomePage>
           pulse: _pulseController,
           userCadence: auth.userCadence,
           todaySteps: _todaySteps + _liveAddedSteps,
-          syncGap: (112 - auth.userCadence).abs(), // 112 is mock track BPM
+          trackBpm: _currentTrackBpm ?? _mockState.trackBpm,
+          syncGap: _syncGap(auth.userCadence),
           recentPlaylists: playlists,
           onGoToLibrary: _goToLibraryTab,
           onChangeBpm: _openBpmPicker,
@@ -499,23 +527,25 @@ class _HomePageState extends State<HomePage>
 
 class _HomeTabView extends StatelessWidget {
   const _HomeTabView({
-    Key? key,
+    super.key,
     required this.state,
     required this.pulse,
     required this.userCadence,
     required this.todaySteps,
+    required this.trackBpm,
     required this.syncGap,
     required this.recentPlaylists,
     required this.onGoToLibrary,
     required this.onChangeBpm,
     required this.onOpenPlaylist,
     required this.onRefreshPlaylists,
-  }) : super(key: key);
+  });
 
   final _HomeMockState state;
   final Animation<double> pulse;
   final int userCadence;
   final int todaySteps;
+  final int trackBpm;
   final int syncGap;
   final List<TempoPlaylist> recentPlaylists;
   final VoidCallback onGoToLibrary;
@@ -614,6 +644,7 @@ class _HomeTabView extends StatelessWidget {
             _StartSessionCard(
               state: state,
               userCadence: userCadence,
+              trackBpm: trackBpm,
               syncGap: syncGap,
               onGoToLibrary: onGoToLibrary,
               onChangeBpm: onChangeBpm,
@@ -2377,6 +2408,7 @@ class _StartSessionCard extends StatelessWidget {
   const _StartSessionCard({
     required this.state,
     required this.userCadence,
+    required this.trackBpm,
     required this.syncGap,
     required this.onGoToLibrary,
     required this.onChangeBpm,
@@ -2384,6 +2416,7 @@ class _StartSessionCard extends StatelessWidget {
 
   final _HomeMockState state;
   final int userCadence;
+  final int trackBpm;
   final int syncGap;
   final VoidCallback onGoToLibrary;
   final VoidCallback onChangeBpm;
@@ -2443,7 +2476,7 @@ class _StartSessionCard extends StatelessWidget {
               Expanded(
                 child: _SyncStatPill(
                   label: 'Track BPM',
-                  value: '${state.trackBpm}',
+                  value: '$trackBpm',
                   accent: AppColors.primaryBright,
                 ),
               ),

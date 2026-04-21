@@ -57,6 +57,7 @@ class SpotifyAuthController extends ChangeNotifier {
   List<SpotifySearchEntry> _searchEntries = const [];
   final Map<String, List<SpotifyTrack>> _playlistTracks = {};
   final Map<String, String> _playlistTrackErrors = {};
+  final Map<String, int?> _trackBpmCache = {};
   final Set<String> _loadingPlaylistIds = <String>{};
   final Map<String, _SessionPlaylistCacheEntry> _sessionPlaylistCache = {};
   int _lastResolvedBpmCount = 0;
@@ -775,6 +776,38 @@ class SpotifyAuthController extends ChangeNotifier {
     } finally {
       client.close(force: true);
     }
+  }
+
+  Future<int?> resolveTrackBpm(String spotifyUriOrId) async {
+    final normalizedId = _normalizeSpotifyTrackId(spotifyUriOrId);
+    if (normalizedId == null) return null;
+
+    if (_trackBpmCache.containsKey(normalizedId)) {
+      return _trackBpmCache[normalizedId];
+    }
+
+    final bpmFetchResult = await _fetchTrackBpmsBatch([normalizedId]);
+    final bpm = bpmFetchResult.items[normalizedId]?.round();
+    _trackBpmCache[normalizedId] = bpm;
+    return bpm;
+  }
+
+  String? _normalizeSpotifyTrackId(String spotifyUriOrId) {
+    final trimmed = spotifyUriOrId.trim();
+    if (trimmed.isEmpty) return null;
+    if (trimmed.startsWith('spotify:track:')) {
+      final parts = trimmed.split(':');
+      return parts.length >= 3 && parts[2].isNotEmpty ? parts[2] : null;
+    }
+    final uri = Uri.tryParse(trimmed);
+    if (uri != null &&
+        uri.host.contains('spotify.com') &&
+        uri.pathSegments.length >= 2 &&
+        uri.pathSegments.first == 'track') {
+      final id = uri.pathSegments[1].trim();
+      return id.isNotEmpty ? id : null;
+    }
+    return trimmed.isNotEmpty ? trimmed : null;
   }
 
   Future<List<SpotifyTrack>> _filterTracksByBpm({

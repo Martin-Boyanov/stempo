@@ -18,6 +18,7 @@ class NowPlayingPageArgs {
     required this.userCadence,
     this.spotifyUri,
     this.allowedTrackUris = const <String>[],
+    this.trackBpmsByUri = const <String, int>{},
   });
 
   final String trackTitle;
@@ -27,6 +28,7 @@ class NowPlayingPageArgs {
   final int userCadence;
   final String? spotifyUri;
   final List<String> allowedTrackUris;
+  final Map<String, int> trackBpmsByUri;
 }
 
 class NowPlayingPage extends StatefulWidget {
@@ -57,6 +59,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   Color _secondaryColor = AppColors.cinemaRed;
   late final List<String> _allowedTrackUrisOrdered;
   late final Set<String> _allowedTrackUris;
+  late final Map<String, int> _trackBpmsByUri;
   late final bool _usesSpotifyPlaylistContext;
   bool _isAutoSkipping = false;
   bool _isAutoAdvancing = false;
@@ -86,6 +89,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     _trackBpm = widget.args.trackBpm;
     _allowedTrackUrisOrdered = widget.args.allowedTrackUris;
     _allowedTrackUris = widget.args.allowedTrackUris.toSet();
+    _trackBpmsByUri = Map<String, int>.from(widget.args.trackBpmsByUri);
     _usesSpotifyPlaylistContext =
         (widget.args.spotifyUri ?? '').startsWith('spotify:playlist:');
     final initialTrackUri = widget.args.spotifyUri ?? '';
@@ -113,13 +117,16 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
           _lastAutoAdvancedSourceUri = '';
         }
         _currentTrackUri = state.trackUri;
+        final dynamicBpm = _trackBpmsByUri[state.trackUri];
+        if (dynamicBpm != null) {
+          _trackBpm = dynamicBpm;
+        }
         if (state.trackName.isNotEmpty) {
           _trackTitle = state.trackName;
         }
         if (state.artistName.isNotEmpty) {
           _trackArtist = state.artistName;
         }
-        print('NOW PLAYING PAGE REM: "${state.imageUri}" -> "${state.resolvedImageUrl}"');
         if (state.resolvedImageUrl != null) {
           _actualImage = state.resolvedImageUrl;
         }
@@ -140,13 +147,16 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
       if (!mounted || playerState == null) return;
       _setStateSafely(() {
         _currentTrackUri = playerState.trackUri;
+        final dynamicBpm = _trackBpmsByUri[playerState.trackUri];
+        if (dynamicBpm != null) {
+          _trackBpm = dynamicBpm;
+        }
         if (playerState.trackName.isNotEmpty) {
           _trackTitle = playerState.trackName;
         }
         if (playerState.artistName.isNotEmpty) {
           _trackArtist = playerState.artistName;
         }
-        print('NOW PLAYING PAGE INIT: "${playerState.imageUri}" -> "${playerState.resolvedImageUrl}"');
         if (playerState.resolvedImageUrl != null) {
           _actualImage = playerState.resolvedImageUrl;
         }
@@ -193,7 +203,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
       final safeIndex = _currentAllowedIndex.clamp(
         0,
         _allowedTrackUrisOrdered.length - 1,
-      ) as int;
+      );
       await _playAllowedUri(
         _allowedTrackUrisOrdered[safeIndex],
         trackIndex: safeIndex,
@@ -395,7 +405,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     } catch (_) {}
   }
 
-  int get _cadenceGap => (widget.args.trackBpm - widget.args.userCadence).abs();
+  int get _cadenceGap => (_trackBpm - widget.args.userCadence).abs();
 
   String get _matchLabel {
     if (_cadenceGap <= 2) return 'Perfect fit';
@@ -795,9 +805,6 @@ class _PlaybackTimeline extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final safeDurationMs = durationMs <= 0 ? 1 : durationMs;
-    final progress = (playbackPositionMs / safeDurationMs).clamp(0.0, 1.0);
-
     return Column(
       children: [
         SliderTheme(

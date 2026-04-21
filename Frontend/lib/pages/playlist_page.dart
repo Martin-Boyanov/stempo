@@ -236,6 +236,10 @@ class _PlaylistPageState extends State<PlaylistPage> {
               .map((t) => t.spotifyUri)
               .where((uri) => uri.isNotEmpty)
               .toList(growable: false),
+          trackBpmsByUri: {
+            for (final track in tracks)
+              if (track.spotifyUri.isNotEmpty) track.spotifyUri: track.bpm,
+          },
         ),
       );
     } finally {
@@ -309,12 +313,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
                             ),
                           ),
                           const Spacer(),
-                          _RoundIconButton(
-                            icon: Icons.open_in_new_rounded,
-                            onTap: playlist.spotifyUri == null
-                                ? null
-                                : () => _openSpotifyUri(playlist.spotifyUri!),
-                          ),
+                          const SizedBox(width: 46),
                         ],
                       ),
                       const SizedBox(height: 24),
@@ -390,7 +389,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
                         padding: const EdgeInsets.symmetric(horizontal: 8),
                         child: _PlaylistNowPlayingBar(
                           userCadence: widget.args.userCadence,
-                          trackBpm: widget.args.playlist.bpm,
+                          tracks: tracks,
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -817,11 +816,11 @@ class _PlaylistBottomNav extends StatelessWidget {
 class _PlaylistNowPlayingBar extends StatefulWidget {
   const _PlaylistNowPlayingBar({
     required this.userCadence,
-    required this.trackBpm,
+    required this.tracks,
   });
 
   final int userCadence;
-  final int trackBpm;
+  final List<SpotifyTrack> tracks;
 
   @override
   State<_PlaylistNowPlayingBar> createState() => _PlaylistNowPlayingBarState();
@@ -835,6 +834,7 @@ class _PlaylistNowPlayingBarState extends State<_PlaylistNowPlayingBar> {
   String? _title;
   String? _artist;
   String? _image;
+  String _trackUri = '';
 
   @override
   void initState() {
@@ -855,11 +855,13 @@ class _PlaylistNowPlayingBarState extends State<_PlaylistNowPlayingBar> {
         _isLoaded = true;
         _isPaused = state.isPaused;
         if (state.trackUri.isEmpty || state.trackName.isEmpty) {
+          _trackUri = '';
           _title = null;
           _artist = null;
           _image = null;
           return;
         }
+        _trackUri = state.trackUri;
         _title = state.trackName;
         _artist = state.artistName;
         _image = state.resolvedImageUrl;
@@ -874,6 +876,7 @@ class _PlaylistNowPlayingBarState extends State<_PlaylistNowPlayingBar> {
         if (playerState == null ||
             playerState.trackUri.isEmpty ||
             playerState.trackName.isEmpty) {
+          _trackUri = '';
           _title = null;
           _artist = null;
           _image = null;
@@ -881,6 +884,7 @@ class _PlaylistNowPlayingBarState extends State<_PlaylistNowPlayingBar> {
           return;
         }
         _isPaused = playerState.isPaused;
+        _trackUri = playerState.trackUri;
         _title = playerState.trackName;
         _artist = playerState.artistName;
         _image = playerState.resolvedImageUrl;
@@ -909,14 +913,26 @@ class _PlaylistNowPlayingBarState extends State<_PlaylistNowPlayingBar> {
   void _navigateToNowPlaying() {
     final title = _title;
     if (title == null || title.isEmpty) return;
+    final allowedTrackUris = widget.tracks
+        .map((track) => track.spotifyUri)
+        .where((uri) => uri.isNotEmpty)
+        .toList(growable: false);
+    final trackBpmsByUri = {
+      for (final track in widget.tracks)
+        if (track.spotifyUri.isNotEmpty) track.spotifyUri: track.bpm,
+    };
+    final fallbackBpm = widget.tracks.isNotEmpty ? widget.tracks.first.bpm : 0;
     context.push(
       '/now-playing',
       extra: NowPlayingPageArgs(
         trackTitle: title,
         trackArtist: _artist ?? '',
         trackImageAsset: _image ?? '',
-        trackBpm: widget.trackBpm,
+        trackBpm: trackBpmsByUri[_trackUri] ?? fallbackBpm,
         userCadence: widget.userCadence,
+        spotifyUri: _trackUri.isNotEmpty ? _trackUri : null,
+        allowedTrackUris: allowedTrackUris,
+        trackBpmsByUri: trackBpmsByUri,
       ),
     );
   }
