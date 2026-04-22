@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 import os
 from functools import lru_cache
 from pathlib import Path
+from typing import Optional
 
 from dotenv import load_dotenv
 
@@ -9,7 +12,7 @@ BACKEND_ENV_FILE = BACKEND_ROOT / ".env"
 load_dotenv(BACKEND_ENV_FILE, override=False)
 
 
-def _first_env(*keys: str) -> str | None:
+def _first_env(*keys: str) -> Optional[str]:
     for key in keys:
         value = os.getenv(key)
         if value:
@@ -21,18 +24,18 @@ class Settings:
     def __init__(self) -> None:
         self.spotify_api_base_url: str = os.getenv("SPOTIFY_API_BASE_URL", "https://api.spotify.com")
         self.soundcharts_base_url: str = os.getenv("SOUNDCHARTS_BASE_URL", "https://customer.api.soundcharts.com")
-        self.soundcharts_app_id: str | None = _first_env("SOUNDCHARTS_APP_ID", "SOUNDCHARTS_CLIENT_ID", "CLIENT_ID")
-        self.soundcharts_api_key: str | None = _first_env(
+        self.soundcharts_app_id: Optional[str] = _first_env("SOUNDCHARTS_APP_ID", "SOUNDCHARTS_CLIENT_ID", "CLIENT_ID")
+        self.soundcharts_api_key: Optional[str] = _first_env(
             "SOUNDCHARTS_API_KEY",
             "SOUNDCHARTS_CLIENT_SECRET",
             "CLIENT_SECRET",
         )
-        self.mysql_url: str | None = os.getenv("MYSQL_URL")
+        self.mysql_url: Optional[str] = os.getenv("MYSQL_URL")
         self.mysql_host: str = os.getenv("MYSQL_HOST", "127.0.0.1")
         self.mysql_port: int = int(os.getenv("MYSQL_PORT", "3306"))
-        self.mysql_user: str | None = os.getenv("MYSQL_USER")
-        self.mysql_password: str | None = os.getenv("MYSQL_PASSWORD")
-        self.mysql_db: str | None = os.getenv("MYSQL_DB")
+        self.mysql_user: Optional[str] = os.getenv("MYSQL_USER")
+        self.mysql_password: Optional[str] = os.getenv("MYSQL_PASSWORD")
+        self.mysql_db: Optional[str] = os.getenv("MYSQL_DB")
 
     @property
     def database_url(self) -> str:

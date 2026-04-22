@@ -1,0 +1,28 @@
+{
+    "remotePath": "/home/cpnlnmm19006/STEMPO_BACKEND",
+    "host": "riga.superhosting.bg",
+    "username": "laptop@stempo.app",
+    "password": "jDR!DYQhh5dL",
+    "port": 21,
+    "secure": true,
+    "protocol": "ftp",
+    "uploadOnSave": false,
+    "passive": true,
+    "debug": true,
+    "privateKeyPath": null,
+    "passphrase": null,
+    "agent": null,
+    "allow": [],
+    "ignore": [
+        "\\.vscode",
+        "\\.git",
+        "\\.venv",
+        "__pycache__",
+        "\\.env",
+        "\\.DS_Store"
+    ],
+    "generatedFiles": {
+        "extensionsToInclude": [],
+        "path": ""
+    }
+}

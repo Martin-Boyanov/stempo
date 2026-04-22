@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from typing import Optional
 
 from app.api.deps.spotify_auth import require_spotify_token
 from app.clients.soundcharts import SoundchartsClient
@@ -20,7 +23,7 @@ router = APIRouter(
 )
 
 
-def _to_bpm_response(result: dict, requested_spotify_id: str | None) -> SongBpmResponse:
+def _to_bpm_response(result: dict, requested_spotify_id: Optional[str]) -> SongBpmResponse:
     song_data = result.get("data", {}) if isinstance(result, dict) else {}
     song_object = song_data.get("object", {}) if isinstance(song_data, dict) else {}
     audio = song_object.get("audio", {}) if isinstance(song_object, dict) else {}
@@ -43,9 +46,9 @@ def _to_bpm_response(result: dict, requested_spotify_id: str | None) -> SongBpmR
 
 @router.get("/bpm", response_model=SongBpmResponse)
 async def get_song_bpm(
-    song_uuid: str | None = Query(default=None),
-    isrc: str | None = Query(default=None),
-    spotify_id: str | None = Query(default=None),
+    song_uuid: Optional[str] = Query(default=None),
+    isrc: Optional[str] = Query(default=None),
+    spotify_id: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
 ) -> SongBpmResponse:
     try:
@@ -99,8 +102,8 @@ async def get_song_bpm_batch(
 @router.get("/{song_uuid}/bpm", response_model=SongBpmResponse)
 async def get_song_bpm_by_uuid(
     song_uuid: str,
-    isrc: str | None = Query(default=None),
-    spotify_id: str | None = Query(default=None),
+    isrc: Optional[str] = Query(default=None),
+    spotify_id: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
 ) -> SongBpmResponse:
     try:
@@ -120,8 +123,8 @@ async def get_song_bpm_by_uuid(
 @router.get("/{song_uuid}", response_model=SongResolveResponse)
 async def get_song_by_uuid(
     song_uuid: str,
-    isrc: str | None = Query(default=None),
-    spotify_id: str | None = Query(default=None),
+    isrc: Optional[str] = Query(default=None),
+    spotify_id: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
 ) -> SongResolveResponse:
     try:
@@ -140,9 +143,9 @@ async def get_song_by_uuid(
 
 @router.get("", response_model=SongResolveResponse)
 async def get_song(
-    song_uuid: str | None = Query(default=None),
-    isrc: str | None = Query(default=None),
-    spotify_id: str | None = Query(default=None),
+    song_uuid: Optional[str] = Query(default=None),
+    isrc: Optional[str] = Query(default=None),
+    spotify_id: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
 ) -> SongResolveResponse:
     try:

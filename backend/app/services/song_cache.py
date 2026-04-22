@@ -1,12 +1,15 @@
+from __future__ import annotations
+
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
+from typing import Optional
 
 from app.db.models import SongCache
 
 
 class SongCacheService:
     @staticmethod
-    def get_by_song_uuid(db: Session, song_uuid: str) -> SongCache | None:
+    def get_by_song_uuid(db: Session, song_uuid: str) -> Optional[SongCache]:
         return (
             db.query(SongCache)
             .filter(SongCache.song_uuid == song_uuid)
@@ -15,11 +18,11 @@ class SongCacheService:
         )
 
     @staticmethod
-    def get_by_isrc(db: Session, isrc: str) -> SongCache | None:
+    def get_by_isrc(db: Session, isrc: str) -> Optional[SongCache]:
         return db.query(SongCache).filter(SongCache.isrc == isrc).order_by(SongCache.updated_at.desc()).first()
 
     @staticmethod
-    def get_by_spotify_id(db: Session, spotify_id: str) -> SongCache | None:
+    def get_by_spotify_id(db: Session, spotify_id: str) -> Optional[SongCache]:
         return (
             db.query(SongCache)
             .filter(SongCache.spotify_id == spotify_id)
@@ -33,9 +36,9 @@ class SongCacheService:
         *,
         resolved_by: str,
         payload: dict,
-        requested_song_uuid: str | None = None,
-        requested_isrc: str | None = None,
-        requested_spotify_id: str | None = None,
+        requested_song_uuid: Optional[str] = None,
+        requested_isrc: Optional[str] = None,
+        requested_spotify_id: Optional[str] = None,
     ) -> SongCache:
         song_object = payload.get("object", {}) if isinstance(payload, dict) else {}
         payload_song_uuid = song_object.get("uuid")

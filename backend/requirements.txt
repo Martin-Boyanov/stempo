@@ -6,3 +6,5 @@ SQLAlchemy==2.0.43
 alembic==1.16.5
 PyMySQL==1.1.1
 cryptography
+a2wsgi==1.10.10
+eval_type_backport

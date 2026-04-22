@@ -1,7 +1,10 @@
+from __future__ import annotations
+
 import time
 
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from typing import Optional
 
 from app.clients.spotify import SpotifyAuthError, SpotifyClient
 
@@ -11,7 +14,7 @@ _token_validation_cache: dict[str, tuple[float, dict]] = {}
 
 
 async def require_spotify_token(
-    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
 ) -> dict:
     if credentials is None or credentials.scheme.lower() != "bearer" or not credentials.credentials:
         raise HTTPException(status_code=401, detail="Missing Authorization Bearer token")

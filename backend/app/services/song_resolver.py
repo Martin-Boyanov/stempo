@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import logging
+from typing import Optional
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -9,7 +12,7 @@ from app.services.song_cache import SongCacheService
 logger = logging.getLogger("uvicorn.error")
 
 
-def _log_resolution(source: str, resolved_by: str, song_uuid: str | None, isrc: str | None, spotify_id: str | None) -> None:
+def _log_resolution(source: str, resolved_by: str, song_uuid: Optional[str], isrc: Optional[str], spotify_id: Optional[str]) -> None:
     logger.info(
         "song_resolve source=%s resolved_by=%s song_uuid=%s isrc=%s spotify_id=%s",
         source,
@@ -20,7 +23,7 @@ def _log_resolution(source: str, resolved_by: str, song_uuid: str | None, isrc: 
     )
 
 
-def _cached_response(*, resolved_by: str, cache_row, song_uuid: str | None, isrc: str | None, spotify_id: str | None) -> dict:
+def _cached_response(*, resolved_by: str, cache_row, song_uuid: Optional[str], isrc: Optional[str], spotify_id: Optional[str]) -> dict:
     response = {"resolved_by": resolved_by, "data": cache_row.payload}
     if resolved_by == "song_uuid":
         response["song_uuid"] = song_uuid or cache_row.song_uuid
@@ -35,9 +38,9 @@ async def resolve_song(
     *,
     db: Session,
     client: SoundchartsClient,
-    song_uuid: str | None = None,
-    isrc: str | None = None,
-    spotify_id: str | None = None,
+    song_uuid: Optional[str] = None,
+    isrc: Optional[str] = None,
+    spotify_id: Optional[str] = None,
 ) -> dict:
     if not any([song_uuid, isrc, spotify_id]):
         raise HTTPException(
