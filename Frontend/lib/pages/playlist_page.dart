@@ -44,6 +44,9 @@ class _PlaylistPageState extends State<PlaylistPage> {
   late Color _accentColor;
   late Color _secondaryColor;
 
+  int get _targetBpm =>
+      (_effectiveBpmRange.min + _effectiveBpmRange.max) ~/ 2;
+
   @override
   void initState() {
     super.initState();
@@ -114,13 +117,19 @@ class _PlaylistPageState extends State<PlaylistPage> {
     if (_requestedTracks) return;
     final auth = AuthScope.watch(context);
     if (auth.accessToken == null || auth.accessToken!.isEmpty) return;
-    final range = _effectiveBpmRange;
     _requestedTracks = true;
-    auth.loadTracksForPlaylist(
+    unawaited(_loadTracks());
+  }
+
+  Future<void> _loadTracks({bool forceRefresh = false}) {
+    return AuthScope.read(context).loadTracksForPlaylist(
       widget.args.playlist.id,
-      targetBpm: (range.min + range.max) ~/ 2,
+      targetBpm: _targetBpm,
+      forceRefresh: forceRefresh,
     );
   }
+
+  Future<void> _refreshTracks() => _loadTracks(forceRefresh: true);
 
   Future<bool> _openSpotifyUri(String spotifyUri) async {
     if (spotifyUri.isEmpty || _isLaunching) return false;
@@ -372,16 +381,13 @@ class _PlaylistPageState extends State<PlaylistPage> {
                       ),
                       const SizedBox(height: 28),
                       _PlaylistTrackSection(
+                        playlistTitle: playlist.title,
                         tracks: tracks,
                         isLoading: isLoadingTracks,
                         loadError: trackLoadError,
+                        onRefresh: _refreshTracks,
                         onPlayTrack: (track) => _handleStartSession(startTrack: track),
-                        onRetry: () => auth.loadTracksForPlaylist(
-                          playlist.id,
-                          targetBpm:
-                              (_effectiveBpmRange.min + _effectiveBpmRange.max) ~/
-                              2,
-                        ),
+                        onRetry: _refreshTracks,
                       ),
                     ],
                   ),
@@ -480,18 +486,22 @@ class _PlaylistArtwork extends StatelessWidget {
 
 class _PlaylistTrackSection extends StatelessWidget {
   const _PlaylistTrackSection({
+    required this.playlistTitle,
     required this.tracks,
     required this.isLoading,
     required this.loadError,
+    required this.onRefresh,
     required this.onPlayTrack,
     required this.onRetry,
   });
 
+  final String playlistTitle;
   final List<SpotifyTrack> tracks;
   final bool isLoading;
   final String? loadError;
+  final Future<void> Function() onRefresh;
   final Future<void> Function(SpotifyTrack track) onPlayTrack;
-  final VoidCallback onRetry;
+  final Future<void> Function() onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -502,9 +512,9 @@ class _PlaylistTrackSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             children: [
-              Text(
+              const Text(
                 'Tracks',
                 style: TextStyle(
                   color: AppColors.textPrimary,
@@ -512,8 +522,15 @@ class _PlaylistTrackSection extends StatelessWidget {
                   fontWeight: FontWeight.w700,
                 ),
               ),
-              Spacer(),
-              Text(
+              const Spacer(),
+              IconButton(
+                onPressed: isLoading ? null : () => unawaited(onRefresh()),
+                icon: const Icon(Icons.refresh_rounded, size: 20),
+                color: AppColors.textPrimary,
+                tooltip: 'Refresh tracks',
+                splashRadius: 20,
+              ),
+              const Text(
                 'Play in Spotify',
                 style: TextStyle(
                   color: AppColors.textMuted,
@@ -548,7 +565,7 @@ class _PlaylistTrackSection extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 TextButton.icon(
-                  onPressed: onRetry,
+                  onPressed: () => unawaited(onRetry()),
                   icon: const Icon(Icons.refresh_rounded, size: 18),
                   label: const Text('Retry'),
                   style: TextButton.styleFrom(
@@ -559,18 +576,16 @@ class _PlaylistTrackSection extends StatelessWidget {
               ],
             )
           else if (tracks.isEmpty)
-            const Text(
-              'Tracks will appear here once Spotify finishes loading this playlist.',
-              style: TextStyle(
+            Text(
+              'No BPM-matched tracks are available for "$playlistTitle" yet. Try refreshing to re-fetch the playlist.',
+              style: const TextStyle(
                 color: AppColors.textSecondary,
                 fontSize: 13,
                 height: 1.4,
                 fontWeight: FontWeight.w600,
               ),
             )
-          else ...(() {
-            final visibleTracks = tracks.take(12).toList(growable: false);
-            return visibleTracks.asMap().entries.map(
+          else ...tracks.asMap().entries.map(
               (entry) => Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: _SpotifyTrackRow(
@@ -578,8 +593,7 @@ class _PlaylistTrackSection extends StatelessWidget {
                   onPlay: () => onPlayTrack(entry.value),
                 ),
               ),
-            );
-          })(),
+            ),
         ],
       ),
     );

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import Optional
@@ -15,6 +17,8 @@ from app.schemas.song import (
     SongResolveResponse,
 )
 from app.services.song_resolver import resolve_song
+
+logger = logging.getLogger("uvicorn.error")
 
 router = APIRouter(
     prefix="/soundcharts/song",
@@ -76,6 +80,7 @@ async def get_song_bpm_batch(
 
     # Preserve order while deduplicating.
     deduped_ids = list(dict.fromkeys(spotify_ids))
+    logger.info("song_bpm_batch request_count=%s deduped_count=%s", len(spotify_ids), len(deduped_ids))
     client = SoundchartsClient()
     results: list[SongBpmBatchItem] = []
     for spotify_id in deduped_ids:
@@ -94,6 +99,7 @@ async def get_song_bpm_batch(
                 )
             )
         except Exception:
+            logger.exception("song_bpm_batch failed spotify_id=%s", spotify_id)
             results.append(SongBpmBatchItem(spotify_id=spotify_id, tempo=None, found=False))
 
     return SongBpmBatchResponse(items=results)

@@ -476,10 +476,14 @@ class SpotifyAuthController extends ChangeNotifier {
     }
   }
 
-  Future<void> loadTracksForPlaylist(String playlistId, {int? targetBpm}) async {
+  Future<void> loadTracksForPlaylist(
+    String playlistId, {
+    int? targetBpm,
+    bool forceRefresh = false,
+  }) async {
     final cachedTracks = _playlistTracks[playlistId];
     if (playlistId.isEmpty ||
-        (cachedTracks != null && cachedTracks.isNotEmpty) ||
+        (!forceRefresh && cachedTracks != null && cachedTracks.isNotEmpty) ||
         _loadingPlaylistIds.contains(playlistId)) {
       return;
     }
@@ -535,34 +539,7 @@ class SpotifyAuthController extends ChangeNotifier {
 
     try {
       _debugTrackLoad('start playlist=$playlistId spotifyPlaylistId=$realId');
-      final json = await _getJson(
-        'https://api.spotify.com/v1/playlists/$realId/tracks?limit=50&offset=0',
-      );
-      final items = json['items'] as List<dynamic>? ?? const [];
-      final rawTracks = items
-          .whereType<Map<String, dynamic>>()
-          .toList(growable: false)
-          .asMap()
-          .entries
-           .map((entry) => (index: entry.key, item: entry.value))
-           .map((entry) => (
-                 index: entry.index,
-                 track: entry.item['track'] ?? entry.item['item'],
-               ))
-          .where((entry) => entry.track is Map<String, dynamic>)
-          .map((entry) => (
-                index: entry.index,
-                track: entry.track as Map<String, dynamic>,
-              ))
-          .where((entry) => (entry.track['type'] as String?) == 'track')
-          .map(
-            (entry) => spotifyTrackFromJson(
-              entry.track,
-              playlistPosition: entry.index,
-            ),
-          )
-          .where((track) => track.spotifyUri.isNotEmpty && track.id.isNotEmpty)
-          .toList(growable: false);
+      final rawTracks = await _fetchAllPlaylistTracks(realId);
       _debugTrackLoad(
         'spotify_tracks playlist=$playlistId total=${rawTracks.length}',
       );
@@ -603,6 +580,55 @@ class SpotifyAuthController extends ChangeNotifier {
       _loadingPlaylistIds.remove(playlistId);
       notifyListeners();
     }
+  }
+
+  Future<List<SpotifyTrack>> _fetchAllPlaylistTracks(String playlistId) async {
+    final collectedTracks = <SpotifyTrack>[];
+    String? nextUrl =
+        'https://api.spotify.com/v1/playlists/$playlistId/tracks?limit=50&offset=0';
+    var pageCount = 0;
+
+    while (nextUrl != null) {
+      final json = await _getJson(nextUrl);
+      final items = json['items'] as List<dynamic>? ?? const [];
+      final pageTracks = items
+          .whereType<Map<String, dynamic>>()
+          .toList(growable: false)
+          .asMap()
+          .entries
+          .map((entry) => (
+                index: collectedTracks.length + entry.key,
+                item: entry.value,
+              ))
+          .map((entry) => (
+                index: entry.index,
+                track: entry.item['track'] ?? entry.item['item'],
+              ))
+          .where((entry) => entry.track is Map<String, dynamic>)
+          .map((entry) => (
+                index: entry.index,
+                track: entry.track as Map<String, dynamic>,
+              ))
+          .where((entry) => (entry.track['type'] as String?) == 'track')
+          .map(
+            (entry) => spotifyTrackFromJson(
+              entry.track,
+              playlistPosition: entry.index,
+            ),
+          )
+          .where((track) => track.spotifyUri.isNotEmpty && track.id.isNotEmpty)
+          .toList(growable: false);
+      collectedTracks.addAll(pageTracks);
+
+      final next = json['next'] as String?;
+      nextUrl = (next != null && next.isNotEmpty) ? next : null;
+      pageCount++;
+      _debugTrackLoad(
+        'spotify_tracks_page playlist=$playlistId page=$pageCount pageTracks=${pageTracks.length} total=${collectedTracks.length} hasMore=${nextUrl != null}',
+      );
+    }
+
+    return collectedTracks;
   }
 
   Future<String?> ensureSessionPlaylistForBpm({
@@ -881,14 +907,15 @@ class SpotifyAuthController extends ChangeNotifier {
       final uri = Uri.parse('$baseUrl/soundcharts/song/bpm/batch');
       _debugTrackLoad('backend_request url=$uri ids=${spotifyIds.length}');
       final request = await client.postUrl(uri).timeout(_backendRequestTimeout);
+      final requestBody = jsonEncode({'spotify_ids': spotifyIds});
+      final requestBytes = utf8.encode(requestBody);
       request.headers.contentType = ContentType.json;
+      request.headers.contentLength = requestBytes.length;
       request.headers.set(
         HttpHeaders.authorizationHeader,
         'Bearer $_accessToken',
       );
-      request.write(
-        jsonEncode({'spotify_ids': spotifyIds}),
-      );
+      request.add(requestBytes);
       final response = await request.close().timeout(_backendRequestTimeout);
       final payload = await response
           .transform(utf8.decoder)
