@@ -43,6 +43,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
   bool _isLaunching = false;
   late Color _accentColor;
   late Color _secondaryColor;
+  final ScrollController _scrollController = ScrollController();
 
   int get _targetBpm =>
       (_effectiveBpmRange.min + _effectiveBpmRange.max) ~/ 2;
@@ -53,6 +54,14 @@ class _PlaylistPageState extends State<PlaylistPage> {
     _accentColor = widget.args.playlist.colors.last;
     _secondaryColor = AppColors.cinemaRed;
     _updatePalette();
+    _scrollController.addListener(_handleScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_handleScroll);
+    _scrollController.dispose();
+    super.dispose();
   }
 
   Future<void> _updatePalette() async {
@@ -129,7 +138,25 @@ class _PlaylistPageState extends State<PlaylistPage> {
     );
   }
 
+  Future<void> _loadMoreTracks() {
+    return AuthScope.read(context).loadMoreTracksForPlaylist(
+      widget.args.playlist.id,
+      targetBpm: _targetBpm,
+    );
+  }
+
   Future<void> _refreshTracks() => _loadTracks(forceRefresh: true);
+
+  void _handleScroll() {
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    if (position.pixels < position.maxScrollExtent - 480) return;
+    final auth = AuthScope.read(context);
+    if (auth.hasMoreTracksForPlaylist(widget.args.playlist.id) &&
+        !auth.isLoadingTracksForPlaylist(widget.args.playlist.id)) {
+      unawaited(_loadMoreTracks());
+    }
+  }
 
   Future<bool> _openSpotifyUri(String spotifyUri) async {
     if (spotifyUri.isEmpty || _isLaunching) return false;
@@ -179,6 +206,10 @@ class _PlaylistPageState extends State<PlaylistPage> {
 
     try {
       final auth = AuthScope.read(context);
+      await auth.ensureAllTracksLoadedForPlaylist(
+        widget.args.playlist.id,
+        targetBpm: _targetBpm,
+      );
       final tracks = auth.tracksForPlaylist(widget.args.playlist.id);
 
       if (tracks.isEmpty) {
@@ -284,9 +315,10 @@ class _PlaylistPageState extends State<PlaylistPage> {
   Widget build(BuildContext context) {
     final playlist = widget.args.playlist;
     final auth = AuthScope.watch(context);
-    final tracks = auth.tracksForPlaylist(playlist.id);
+    final tracks = auth.allTracksForPlaylist(playlist.id);
     final isLoadingTracks = auth.isLoadingTracksForPlaylist(playlist.id);
     final trackLoadError = auth.trackErrorForPlaylist(playlist.id);
+    final hasMoreTracks = auth.hasMoreTracksForPlaylist(playlist.id);
 
     return Scaffold(
       body: Stack(
@@ -304,6 +336,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
               fit: StackFit.expand,
               children: [
                 SingleChildScrollView(
+                  controller: _scrollController,
                   padding: const EdgeInsets.fromLTRB(20, 12, 20, 208),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -384,6 +417,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
                         playlistTitle: playlist.title,
                         tracks: tracks,
                         isLoading: isLoadingTracks,
+                        hasMoreTracks: hasMoreTracks,
                         loadError: trackLoadError,
                         onRefresh: _refreshTracks,
                         onPlayTrack: (track) => _handleStartSession(startTrack: track),
@@ -489,6 +523,7 @@ class _PlaylistTrackSection extends StatelessWidget {
     required this.playlistTitle,
     required this.tracks,
     required this.isLoading,
+    required this.hasMoreTracks,
     required this.loadError,
     required this.onRefresh,
     required this.onPlayTrack,
@@ -498,6 +533,7 @@ class _PlaylistTrackSection extends StatelessWidget {
   final String playlistTitle;
   final List<SpotifyTrack> tracks;
   final bool isLoading;
+  final bool hasMoreTracks;
   final String? loadError;
   final Future<void> Function() onRefresh;
   final Future<void> Function(SpotifyTrack track) onPlayTrack;
@@ -541,12 +577,12 @@ class _PlaylistTrackSection extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          if (isLoading)
+          if (isLoading && tracks.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 12),
               child: WalkingLoader(
                 title: 'Loading tracks',
-                subtitle: 'Matching this playlist to the selected BPM range.',
+                subtitle: 'Loading songs from Spotify.',
                 compact: true,
               ),
             )
@@ -577,7 +613,7 @@ class _PlaylistTrackSection extends StatelessWidget {
             )
           else if (tracks.isEmpty)
             Text(
-              'No BPM-matched tracks are available for "$playlistTitle" yet. Try refreshing to re-fetch the playlist.',
+              'No songs are available for "$playlistTitle" yet. Try refreshing to re-fetch the playlist.',
               style: const TextStyle(
                 color: AppColors.textSecondary,
                 fontSize: 13,
@@ -594,6 +630,39 @@ class _PlaylistTrackSection extends StatelessWidget {
                 ),
               ),
             ),
+          if (tracks.isNotEmpty && (isLoading || hasMoreTracks))
+            Padding(
+              padding: const EdgeInsets.only(top: 4, bottom: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  if (isLoading) ...[
+                    const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    const SizedBox(width: 10),
+                    const Text(
+                      'Loading more songs...',
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ] else
+                    const Text(
+                      'Scroll for more songs',
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -608,20 +677,39 @@ class _SpotifyTrackRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final trackNumber = track.playlistPosition >= 0
+        ? '${track.playlistPosition + 1}'.padLeft(2, '0')
+        : '--';
+
     return FrostedPanel(
-      radius: 22,
-      padding: const EdgeInsets.all(12),
+      radius: 18,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Row(
         children: [
+          SizedBox(
+            width: 30,
+            child: Text(
+              trackNumber,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: AppColors.textMuted,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.6,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
           MediaCover(
             imageAsset: track.imageUrl,
-            size: 58,
-            borderRadius: 16,
+            size: 48,
+            borderRadius: 14,
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   track.title,
@@ -629,42 +717,43 @@ class _SpotifyTrackRow extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: AppColors.textPrimary,
-                    fontSize: 15,
+                    fontSize: 14,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 2),
                 Text(
                   track.artistLine,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: AppColors.textSecondary,
-                    fontSize: 12,
+                    fontSize: 11,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
             children: [
               Text(
                 _formatDuration(track.durationMs),
                 style: const TextStyle(
                   color: AppColors.textMuted,
-                  fontSize: 12,
+                  fontSize: 11,
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               GestureDetector(
                 onTap: onPlay,
                 child: Container(
-                  width: 38,
-                  height: 38,
+                  width: 34,
+                  height: 34,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     gradient: const LinearGradient(
@@ -680,7 +769,7 @@ class _SpotifyTrackRow extends StatelessWidget {
                   child: const Icon(
                     Icons.play_arrow_rounded,
                     color: AppColors.background,
-                    size: 24,
+                    size: 20,
                   ),
                 ),
               ),

@@ -349,6 +349,8 @@ class _SearchPageState extends State<SearchPage> {
   final TextEditingController _searchController = TextEditingController();
 
   late RangeValues _paceRange;
+  late double _manualTargetBpm;
+  late double _manualTolerance;
   String _query = '';
   String? _selectedUseCase;
   String? _selectedMood;
@@ -359,6 +361,16 @@ class _SearchPageState extends State<SearchPage> {
   void initState() {
     super.initState();
     _paceRange = widget.paceRange;
+    _manualTargetBpm =
+        ((widget.paceRange.start + widget.paceRange.end) / 2).toDouble();
+    _manualTolerance =
+        ((widget.paceRange.end - widget.paceRange.start) / 2).toDouble();
+  }
+
+  RangeValues _rangeFromTargetAndTolerance(double target, double tolerance) {
+    final start = (target - tolerance).clamp(88, 126).toDouble();
+    final end = (target + tolerance).clamp(88, 126).toDouble();
+    return RangeValues(start, end);
   }
 
   @override
@@ -532,6 +544,8 @@ class _SearchPageState extends State<SearchPage> {
     var selectedDuration = _selectedDuration;
     var paceFilterMode = _paceFilterMode;
     var paceRange = _paceRange;
+    var manualTargetBpm = _manualTargetBpm;
+    var manualTolerance = _manualTolerance;
 
     await showModalBottomSheet<void>(
       context: context,
@@ -694,28 +708,56 @@ class _SearchPageState extends State<SearchPage> {
                             paceFilterMode == _PaceFilterMode.currentPace
                                 ? 'Using your current pace: '
                                       '${widget.paceRange.start.round()}-${widget.paceRange.end.round()} BPM'
-                                : '${paceRange.start.round()}-${paceRange.end.round()} BPM',
+                                : '${manualTargetBpm.round()} BPM (${paceRange.start.round()}-${paceRange.end.round()})',
                             style: const TextStyle(
                               color: AppColors.textPrimary,
                               fontSize: 15,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
-                          RangeSlider(
-                            values: paceRange,
+                          const SizedBox(height: 10),
+                          Slider(
+                            value: manualTargetBpm,
                             min: 88,
                             max: 126,
                             divisions: 38,
                             activeColor: AppColors.primary,
                             inactiveColor: Colors.white.withValues(alpha: 0.1),
-                            labels: RangeLabels(
-                              paceRange.start.round().toString(),
-                              paceRange.end.round().toString(),
-                            ),
-                            onChanged: (values) {
+                            onChanged: (value) {
                               setModalState(() {
                                 paceFilterMode = _PaceFilterMode.manualRange;
-                                paceRange = values;
+                                manualTargetBpm = value;
+                                paceRange = _rangeFromTargetAndTolerance(
+                                  manualTargetBpm,
+                                  manualTolerance,
+                                );
+                              });
+                            },
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Tolerance: +/- ${manualTolerance.round()} BPM',
+                            style: const TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Slider(
+                            value: manualTolerance,
+                            min: 4,
+                            max: 18,
+                            divisions: 14,
+                            activeColor: AppColors.warning,
+                            inactiveColor: Colors.white.withValues(alpha: 0.1),
+                            onChanged: (value) {
+                              setModalState(() {
+                                paceFilterMode = _PaceFilterMode.manualRange;
+                                manualTolerance = value;
+                                paceRange = _rangeFromTargetAndTolerance(
+                                  manualTargetBpm,
+                                  manualTolerance,
+                                );
                               });
                             },
                           ),
@@ -731,6 +773,16 @@ class _SearchPageState extends State<SearchPage> {
                                     selectedMood = null;
                                     selectedDuration = null;
                                     paceRange = widget.paceRange;
+                                    manualTargetBpm =
+                                        ((widget.paceRange.start +
+                                                    widget.paceRange.end) /
+                                                2)
+                                            .toDouble();
+                                    manualTolerance =
+                                        ((widget.paceRange.end -
+                                                    widget.paceRange.start) /
+                                                2)
+                                            .toDouble();
                                   });
                                 },
                                 child: const Text(
@@ -761,6 +813,8 @@ class _SearchPageState extends State<SearchPage> {
                                         _selectedMood = selectedMood;
                                         _selectedDuration = selectedDuration;
                                         _paceRange = paceRange;
+                                        _manualTargetBpm = manualTargetBpm;
+                                        _manualTolerance = manualTolerance;
                                       });
                                       Navigator.of(context).pop();
                                     },

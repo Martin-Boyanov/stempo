@@ -95,6 +95,7 @@ class _HomePageState extends State<HomePage>
   Future<void> _openBpmPicker() async {
     final auth = AuthScope.read(context);
     var tempCadence = auth.userCadence.toDouble();
+    final tolerance = auth.bpmTolerance;
 
     final updated = await showModalBottomSheet<int>(
       context: context,
@@ -135,6 +136,16 @@ class _HomePageState extends State<HomePage>
                         fontWeight: FontWeight.w700,
                       ),
                     ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Range: ${tempCadence.round() - tolerance}-${tempCadence.round() + tolerance} BPM (+/- $tolerance)',
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
                     Slider(
                       value: tempCadence,
                       min: 90,

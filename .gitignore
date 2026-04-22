@@ -22,6 +22,8 @@ migrate_working_dir/
 
 # VS Code (optional to track project-level settings)
 # .vscode/
+.vscode/ftp-sync.json
+backend/.vscode/ftp-sync.json
 
 # Flutter/Dart/Pub related
 **/doc/api/

@@ -56,7 +56,9 @@ class SpotifyAuthController extends ChangeNotifier {
   List<TempoPlaylist> _playlists = const [];
   List<SpotifySearchEntry> _searchEntries = const [];
   final Map<String, List<SpotifyTrack>> _playlistTracks = {};
+  final Map<String, List<SpotifyTrack>> _playlistDisplayTracks = {};
   final Map<String, String> _playlistTrackErrors = {};
+  final Map<String, String?> _playlistTrackNextUrls = {};
   final Map<String, int?> _trackBpmCache = {};
   final Set<String> _loadingPlaylistIds = <String>{};
   final Map<String, _SessionPlaylistCacheEntry> _sessionPlaylistCache = {};
@@ -104,12 +106,16 @@ class SpotifyAuthController extends ChangeNotifier {
     _playlistCache[playlist.id] = playlist;
   }
   List<SpotifySearchEntry> get searchEntries => _searchEntries;
+  List<SpotifyTrack> allTracksForPlaylist(String playlistId) =>
+      _playlistDisplayTracks[playlistId] ?? const [];
   List<SpotifyTrack> tracksForPlaylist(String playlistId) =>
       _playlistTracks[playlistId] ?? const [];
   String? trackErrorForPlaylist(String playlistId) =>
       _playlistTrackErrors[playlistId];
   bool isLoadingTracksForPlaylist(String playlistId) =>
       _loadingPlaylistIds.contains(playlistId);
+  bool hasMoreTracksForPlaylist(String playlistId) =>
+      (_playlistTrackNextUrls[playlistId]?.isNotEmpty ?? false);
   bool get isLoadingData => _isLoadingData;
   bool get isConnected =>
       _status == SpotifyConnectionStatus.connected &&
@@ -309,7 +315,9 @@ class SpotifyAuthController extends ChangeNotifier {
     _playlists = const [];
     _searchEntries = const [];
     _playlistTracks.clear();
+    _playlistDisplayTracks.clear();
     _playlistTrackErrors.clear();
+    _playlistTrackNextUrls.clear();
     _sessionPlaylistCache.clear();
     _loadingPlaylistIds.clear();
     _pendingVerifier = null;
@@ -481,9 +489,11 @@ class SpotifyAuthController extends ChangeNotifier {
     int? targetBpm,
     bool forceRefresh = false,
   }) async {
-    final cachedTracks = _playlistTracks[playlistId];
+    final hasCachedTracks =
+        _playlistTracks.containsKey(playlistId) &&
+        _playlistDisplayTracks.containsKey(playlistId);
     if (playlistId.isEmpty ||
-        (!forceRefresh && cachedTracks != null && cachedTracks.isNotEmpty) ||
+        (!forceRefresh && hasCachedTracks) ||
         _loadingPlaylistIds.contains(playlistId)) {
       return;
     }
@@ -494,34 +504,14 @@ class SpotifyAuthController extends ChangeNotifier {
       return;
     }
 
-    final cached = findPlaylistById(playlistId);
-    final spotifyUri = cached?.spotifyUri;
-    String realId = playlistId;
-    if (spotifyUri != null && spotifyUri.isNotEmpty) {
-      if (spotifyUri.startsWith('spotify:playlist:')) {
-        realId = spotifyUri.split(':').last;
-      } else {
-        final spotifyUriParsed = Uri.tryParse(spotifyUri);
-        if (spotifyUriParsed != null &&
-            (spotifyUriParsed.host == 'open.spotify.com' ||
-                spotifyUriParsed.host == 'play.spotify.com')) {
-          final segments = spotifyUriParsed.pathSegments
-              .where((segment) => segment.isNotEmpty)
-              .toList(growable: false);
-          if (segments.length >= 2 && segments.first == 'playlist') {
-            realId = segments[1];
-          }
-        }
-      }
-    } else if (playlistId.startsWith('search-') || playlistId.startsWith('recent-')) {
-      realId = playlistId;
-    }
+    final realId = _resolveSpotifyPlaylistId(playlistId);
 
     if (realId.isEmpty) return;
     final looksLikeSpotifyPlaylistId = RegExp(
       r'^[A-Za-z0-9]{22}$',
     ).hasMatch(realId);
     if (!looksLikeSpotifyPlaylistId) {
+      final spotifyUri = findPlaylistById(playlistId)?.spotifyUri;
       _playlistTrackErrors[playlistId] =
           'This playlist has no valid Spotify playlist ID, so tracks cannot be loaded.';
       _debugTrackLoad(
@@ -534,14 +524,25 @@ class SpotifyAuthController extends ChangeNotifier {
     _loadingPlaylistIds.add(playlistId);
     _lastResolvedBpmCount = 0;
     _lastBackendTimedOut = false;
+    if (forceRefresh) {
+      _playlistTracks.remove(playlistId);
+      _playlistDisplayTracks.remove(playlistId);
+      _playlistTrackNextUrls.remove(playlistId);
+    }
     _playlistTrackErrors.remove(playlistId);
     notifyListeners();
 
     try {
       _debugTrackLoad('start playlist=$playlistId spotifyPlaylistId=$realId');
-      final rawTracks = await _fetchAllPlaylistTracks(realId);
+      final firstPage = await _fetchPlaylistTracksPage(
+        'https://api.spotify.com/v1/playlists/$realId/tracks?limit=50&offset=0',
+        startIndex: 0,
+      );
+      final rawTracks = firstPage.tracks;
+      _playlistDisplayTracks[playlistId] = rawTracks;
+      _playlistTrackNextUrls[playlistId] = firstPage.nextUrl;
       _debugTrackLoad(
-        'spotify_tracks playlist=$playlistId total=${rawTracks.length}',
+        'spotify_tracks playlist=$playlistId loaded=${rawTracks.length} hasMore=${firstPage.nextUrl != null}',
       );
 
       final usedTargetBpm = targetBpm ?? _userCadence;
@@ -582,53 +583,146 @@ class SpotifyAuthController extends ChangeNotifier {
     }
   }
 
-  Future<List<SpotifyTrack>> _fetchAllPlaylistTracks(String playlistId) async {
-    final collectedTracks = <SpotifyTrack>[];
-    String? nextUrl =
-        'https://api.spotify.com/v1/playlists/$playlistId/tracks?limit=50&offset=0';
-    var pageCount = 0;
-
-    while (nextUrl != null) {
-      final json = await _getJson(nextUrl);
-      final items = json['items'] as List<dynamic>? ?? const [];
-      final pageTracks = items
-          .whereType<Map<String, dynamic>>()
-          .toList(growable: false)
-          .asMap()
-          .entries
-          .map((entry) => (
-                index: collectedTracks.length + entry.key,
-                item: entry.value,
-              ))
-          .map((entry) => (
-                index: entry.index,
-                track: entry.item['track'] ?? entry.item['item'],
-              ))
-          .where((entry) => entry.track is Map<String, dynamic>)
-          .map((entry) => (
-                index: entry.index,
-                track: entry.track as Map<String, dynamic>,
-              ))
-          .where((entry) => (entry.track['type'] as String?) == 'track')
-          .map(
-            (entry) => spotifyTrackFromJson(
-              entry.track,
-              playlistPosition: entry.index,
-            ),
-          )
-          .where((track) => track.spotifyUri.isNotEmpty && track.id.isNotEmpty)
-          .toList(growable: false);
-      collectedTracks.addAll(pageTracks);
-
-      final next = json['next'] as String?;
-      nextUrl = (next != null && next.isNotEmpty) ? next : null;
-      pageCount++;
-      _debugTrackLoad(
-        'spotify_tracks_page playlist=$playlistId page=$pageCount pageTracks=${pageTracks.length} total=${collectedTracks.length} hasMore=${nextUrl != null}',
-      );
+  Future<void> loadMoreTracksForPlaylist(
+    String playlistId, {
+    int? targetBpm,
+  }) async {
+    final nextUrl = _playlistTrackNextUrls[playlistId];
+    if (playlistId.isEmpty ||
+        _loadingPlaylistIds.contains(playlistId) ||
+        nextUrl == null ||
+        nextUrl.isEmpty) {
+      return;
+    }
+    if (!await _ensureValidAccessToken()) {
+      _playlistTrackErrors[playlistId] =
+          'Spotify token is missing or expired. Reconnect Spotify and try again.';
+      notifyListeners();
+      return;
     }
 
-    return collectedTracks;
+    _loadingPlaylistIds.add(playlistId);
+    notifyListeners();
+
+    try {
+      final existingDisplayTracks =
+          _playlistDisplayTracks[playlistId] ?? const <SpotifyTrack>[];
+      final existingFilteredTracks =
+          _playlistTracks[playlistId] ?? const <SpotifyTrack>[];
+      final page = await _fetchPlaylistTracksPage(
+        nextUrl,
+        startIndex: existingDisplayTracks.length,
+      );
+      final mergedDisplayTracks = [
+        ...existingDisplayTracks,
+        ...page.tracks,
+      ];
+      _playlistDisplayTracks[playlistId] = mergedDisplayTracks;
+      _playlistTrackNextUrls[playlistId] = page.nextUrl;
+
+      final usedTargetBpm = targetBpm ?? _userCadence;
+      final minBpm = usedTargetBpm - _bpmTolerance;
+      final maxBpm = usedTargetBpm + _bpmTolerance;
+      final filteredPageTracks = await _filterTracksByBpm(
+        tracks: page.tracks,
+        minBpm: minBpm,
+        maxBpm: maxBpm,
+      );
+      _playlistTracks[playlistId] = [
+        ...existingFilteredTracks,
+        ...filteredPageTracks,
+      ];
+      _playlistTrackErrors.remove(playlistId);
+      _debugTrackLoad(
+        'spotify_tracks_page_loaded playlist=$playlistId pageTracks=${page.tracks.length} total=${mergedDisplayTracks.length} keptAdded=${filteredPageTracks.length} hasMore=${page.nextUrl != null}',
+      );
+    } on _ApiRequestException catch (e) {
+      _playlistTrackErrors[playlistId] =
+          'Track loading failed (${e.statusCode ?? 'network'}): ${e.message}';
+      _debugTrackLoad(
+        'error playlist=$playlistId stage=spotify status=${e.statusCode ?? 'network'} url=${e.url} detail=${e.message}',
+      );
+    } catch (e) {
+      _playlistTrackErrors[playlistId] = 'Track loading failed: $e';
+      _debugTrackLoad('error playlist=$playlistId stage=unknown detail=$e');
+    } finally {
+      _loadingPlaylistIds.remove(playlistId);
+      notifyListeners();
+    }
+  }
+
+  Future<void> ensureAllTracksLoadedForPlaylist(
+    String playlistId, {
+    int? targetBpm,
+  }) async {
+    await loadTracksForPlaylist(playlistId, targetBpm: targetBpm);
+    while (hasMoreTracksForPlaylist(playlistId)) {
+      await loadMoreTracksForPlaylist(playlistId, targetBpm: targetBpm);
+    }
+  }
+
+  String _resolveSpotifyPlaylistId(String playlistId) {
+    final cached = findPlaylistById(playlistId);
+    final spotifyUri = cached?.spotifyUri;
+    var realId = playlistId;
+    if (spotifyUri != null && spotifyUri.isNotEmpty) {
+      if (spotifyUri.startsWith('spotify:playlist:')) {
+        realId = spotifyUri.split(':').last;
+      } else {
+        final spotifyUriParsed = Uri.tryParse(spotifyUri);
+        if (spotifyUriParsed != null &&
+            (spotifyUriParsed.host == 'open.spotify.com' ||
+                spotifyUriParsed.host == 'play.spotify.com')) {
+          final segments = spotifyUriParsed.pathSegments
+              .where((segment) => segment.isNotEmpty)
+              .toList(growable: false);
+          if (segments.length >= 2 && segments.first == 'playlist') {
+            realId = segments[1];
+          }
+        }
+      }
+    } else if (playlistId.startsWith('search-') || playlistId.startsWith('recent-')) {
+      realId = playlistId;
+    }
+    return realId;
+  }
+
+  Future<_PlaylistTracksPage> _fetchPlaylistTracksPage(
+    String url, {
+    required int startIndex,
+  }) async {
+    final json = await _getJson(url);
+    final items = json['items'] as List<dynamic>? ?? const [];
+    final pageTracks = items
+        .whereType<Map<String, dynamic>>()
+        .toList(growable: false)
+        .asMap()
+        .entries
+        .map((entry) => (
+              index: startIndex + entry.key,
+              item: entry.value,
+            ))
+        .map((entry) => (
+              index: entry.index,
+              track: entry.item['track'] ?? entry.item['item'],
+            ))
+        .where((entry) => entry.track is Map<String, dynamic>)
+        .map((entry) => (
+              index: entry.index,
+              track: entry.track as Map<String, dynamic>,
+            ))
+        .where((entry) => (entry.track['type'] as String?) == 'track')
+        .map(
+          (entry) => spotifyTrackFromJson(
+            entry.track,
+            playlistPosition: entry.index,
+          ),
+        )
+        .where((track) => track.spotifyUri.isNotEmpty && track.id.isNotEmpty)
+        .toList(growable: false);
+    final next = json['next'] as String?;
+    final nextUrl = (next != null && next.isNotEmpty) ? next : null;
+    return _PlaylistTracksPage(tracks: pageTracks, nextUrl: nextUrl);
   }
 
   Future<String?> ensureSessionPlaylistForBpm({
@@ -1191,4 +1285,14 @@ class _ExistingPlaylistMatch {
 
   final String playlistId;
   final String playlistUri;
+}
+
+class _PlaylistTracksPage {
+  const _PlaylistTracksPage({
+    required this.tracks,
+    required this.nextUrl,
+  });
+
+  final List<SpotifyTrack> tracks;
+  final String? nextUrl;
 }

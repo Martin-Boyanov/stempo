@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../state/auth_providers.dart';
 import '../ui/theme/colors.dart';
 import '../ui/widgets/primary_button.dart';
 
@@ -12,12 +13,27 @@ class OnboardingPace extends StatefulWidget {
 }
 
 class _OnboardingPaceState extends State<OnboardingPace> {
-  static const RangeValues _suggestedPaceRange = RangeValues(95, 115);
+  static const int _suggestedTargetBpm = 105;
+  static const int _suggestedTolerance = 10;
 
-  RangeValues paceRange = _suggestedPaceRange;
+  double? _targetBpm;
+  double? _tolerance;
+
+  int get _minBpm =>
+      (_targetBpm!.round() - _tolerance!.round()).clamp(80, 140);
+  int get _maxBpm =>
+      (_targetBpm!.round() + _tolerance!.round()).clamp(80, 140);
+
+  void _syncFromAuthIfNeeded() {
+    if (_targetBpm != null && _tolerance != null) return;
+    final auth = AuthScope.read(context);
+    _targetBpm = auth.userCadence.toDouble();
+    _tolerance = auth.bpmTolerance.toDouble();
+  }
 
   @override
   Widget build(BuildContext context) {
+    _syncFromAuthIfNeeded();
     return Scaffold(
       appBar: AppBar(),
       body: LayoutBuilder(
@@ -57,7 +73,7 @@ class _OnboardingPaceState extends State<OnboardingPace> {
                       Column(
                         children: [
                           const Text(
-                            'Lower limit',
+                            'Target BPM',
                             style: TextStyle(
                               color: AppColors.textSecondary,
                               fontSize: 13,
@@ -67,7 +83,7 @@ class _OnboardingPaceState extends State<OnboardingPace> {
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            paceRange.start.toInt().toString(),
+                            _targetBpm!.round().toString(),
                             style: const TextStyle(
                               fontSize: 28,
                               fontWeight: FontWeight.w400,
@@ -79,7 +95,7 @@ class _OnboardingPaceState extends State<OnboardingPace> {
                       Column(
                         children: [
                           const Text(
-                            'Upper limit',
+                            'Tolerance',
                             style: TextStyle(
                               color: AppColors.textSecondary,
                               fontSize: 13,
@@ -89,7 +105,7 @@ class _OnboardingPaceState extends State<OnboardingPace> {
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            paceRange.end.toInt().toString(),
+                            '+/- ${_tolerance!.round()}',
                             style: const TextStyle(
                               fontSize: 28,
                               fontWeight: FontWeight.w400,
@@ -104,21 +120,46 @@ class _OnboardingPaceState extends State<OnboardingPace> {
                     data: SliderTheme.of(
                       context,
                     ).copyWith(showValueIndicator: ShowValueIndicator.never),
-                    child: RangeSlider(
-                      values: paceRange,
+                    child: Slider(
+                      value: _targetBpm!,
                       min: 80,
                       max: 140,
                       divisions: 60,
                       activeColor: AppColors.primary,
-                      onChanged: (values) => setState(() => paceRange = values),
+                      onChanged: (value) => setState(() => _targetBpm = value),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Range: $_minBpm-$_maxBpm BPM',
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SliderTheme(
+                    data: SliderTheme.of(
+                      context,
+                    ).copyWith(showValueIndicator: ShowValueIndicator.never),
+                    child: Slider(
+                      value: _tolerance!,
+                      min: 4,
+                      max: 20,
+                      divisions: 16,
+                      activeColor: AppColors.warning,
+                      onChanged: (value) => setState(() => _tolerance = value),
                     ),
                   ),
                   const SizedBox(height: 8),
                   TextButton(
-                    onPressed: () =>
-                        setState(() => paceRange = _suggestedPaceRange),
+                    onPressed: () => setState(() {
+                      _targetBpm = _suggestedTargetBpm.toDouble();
+                      _tolerance = _suggestedTolerance.toDouble();
+                    }),
                     child: const Text(
-                      'Use suggested range (95-115)',
+                      'Use suggested target (105 BPM +/- 10)',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: AppColors.primary,
@@ -139,7 +180,12 @@ class _OnboardingPaceState extends State<OnboardingPace> {
                   const SizedBox(height: 40),
                   PrimaryButton(
                     text: 'Finish setup',
-                    onPressed: () => context.go('/home'),
+                    onPressed: () {
+                      final auth = AuthScope.read(context);
+                      auth.userCadence = _targetBpm!.round();
+                      auth.bpmTolerance = _tolerance!.round();
+                      context.go('/home');
+                    },
                   ),
                 ],
               ),
