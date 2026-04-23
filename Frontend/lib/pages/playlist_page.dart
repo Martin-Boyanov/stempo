@@ -315,7 +315,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
   Widget build(BuildContext context) {
     final playlist = widget.args.playlist;
     final auth = AuthScope.watch(context);
-    final tracks = auth.allTracksForPlaylist(playlist.id);
+    final tracks = auth.tracksForPlaylist(playlist.id);
     final isLoadingTracks = auth.isLoadingTracksForPlaylist(playlist.id);
     final trackLoadError = auth.trackErrorForPlaylist(playlist.id);
     final hasMoreTracks = auth.hasMoreTracksForPlaylist(playlist.id);
