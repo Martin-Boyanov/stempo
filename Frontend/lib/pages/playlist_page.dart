@@ -13,6 +13,7 @@ import '../ui/theme/app_fx.dart';
 import '../ui/theme/colors.dart';
 import '../ui/widgets/loader.dart';
 import '../ui/widgets/media_cover.dart';
+import '../ui/widgets/now_playing_bar.dart';
 import 'now_playing_page.dart';
 
 class PlaylistPageArgs {
@@ -45,8 +46,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
   late Color _secondaryColor;
   final ScrollController _scrollController = ScrollController();
 
-  int get _targetBpm =>
-      (_effectiveBpmRange.min + _effectiveBpmRange.max) ~/ 2;
+  int get _targetBpm => (_effectiveBpmRange.min + _effectiveBpmRange.max) ~/ 2;
 
   @override
   void initState() {
@@ -79,12 +79,14 @@ class _PlaylistPageState extends State<PlaylistPage> {
       );
       if (!mounted) return;
 
-      final mainColor = palette.vibrantColor?.color ??
+      final mainColor =
+          palette.vibrantColor?.color ??
           palette.lightVibrantColor?.color ??
           palette.dominantColor?.color ??
           widget.args.playlist.colors.last;
 
-      final sideColor = palette.mutedColor?.color ??
+      final sideColor =
+          palette.mutedColor?.color ??
           palette.darkVibrantColor?.color ??
           AppColors.cinemaRed;
 
@@ -117,7 +119,8 @@ class _PlaylistPageState extends State<PlaylistPage> {
     }
 
     final targetBpm = widget.args.userCadence;
-    return _BpmRange(min: targetBpm - 10, max: targetBpm + 10);
+    final tolerance = AuthScope.read(context).bpmTolerance;
+    return _BpmRange(min: targetBpm - tolerance, max: targetBpm + tolerance);
   }
 
   @override
@@ -139,10 +142,9 @@ class _PlaylistPageState extends State<PlaylistPage> {
   }
 
   Future<void> _loadMoreTracks() {
-    return AuthScope.read(context).loadMoreTracksForPlaylist(
-      widget.args.playlist.id,
-      targetBpm: _targetBpm,
-    );
+    return AuthScope.read(
+      context,
+    ).loadMoreTracksForPlaylist(widget.args.playlist.id, targetBpm: _targetBpm);
   }
 
   Future<void> _refreshTracks() => _loadTracks(forceRefresh: true);
@@ -271,12 +273,10 @@ class _PlaylistPageState extends State<PlaylistPage> {
         '/now-playing',
         extra: NowPlayingPageArgs(
           trackTitle: displayTrack.title,
-          trackArtist:
-              displayTrack.artistLine,
-          trackImageAsset:
-              displayTrack.imageUrl.isNotEmpty == true
-                  ? displayTrack.imageUrl
-                  : widget.args.playlist.imageAsset,
+          trackArtist: displayTrack.artistLine,
+          trackImageAsset: displayTrack.imageUrl.isNotEmpty == true
+              ? displayTrack.imageUrl
+              : widget.args.playlist.imageAsset,
           trackBpm: displayTrack.bpm,
           userCadence: widget.args.userCadence,
           spotifyUri: sessionPlaylistUri ?? displayTrack.spotifyUri,
@@ -396,7 +396,9 @@ class _PlaylistPageState extends State<PlaylistPage> {
                         children: [
                           Expanded(
                             child: _ActionButton(
-                              label: _isLaunching ? 'Opening...' : 'Start Session',
+                              label: _isLaunching
+                                  ? 'Opening...'
+                                  : 'Start Session',
                               filled: true,
                               onTap: () => _handleStartSession(),
                             ),
@@ -420,7 +422,8 @@ class _PlaylistPageState extends State<PlaylistPage> {
                         hasMoreTracks: hasMoreTracks,
                         loadError: trackLoadError,
                         onRefresh: _refreshTracks,
-                        onPlayTrack: (track) => _handleStartSession(startTrack: track),
+                        onPlayTrack: (track) =>
+                            _handleStartSession(startTrack: track),
                         onRetry: _refreshTracks,
                       ),
                     ],
@@ -435,9 +438,17 @@ class _PlaylistPageState extends State<PlaylistPage> {
                     children: [
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 8),
-                        child: _PlaylistNowPlayingBar(
+                        child: StempoNowPlayingBar(
                           userCadence: widget.args.userCadence,
-                          tracks: tracks,
+                          allowedTrackUris: tracks
+                              .map((track) => track.spotifyUri)
+                              .where((uri) => uri.isNotEmpty)
+                              .toList(growable: false),
+                          trackBpmsByUri: {
+                            for (final track in tracks)
+                              if (track.spotifyUri.isNotEmpty)
+                                track.spotifyUri: track.bpm,
+                          },
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -621,7 +632,8 @@ class _PlaylistTrackSection extends StatelessWidget {
                 fontWeight: FontWeight.w600,
               ),
             )
-          else ...tracks.asMap().entries.map(
+          else
+            ...tracks.asMap().entries.map(
               (entry) => Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: _SpotifyTrackRow(
@@ -700,11 +712,7 @@ class _SpotifyTrackRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 10),
-          MediaCover(
-            imageAsset: track.imageUrl,
-            size: 48,
-            borderRadius: 14,
-          ),
+          MediaCover(imageAsset: track.imageUrl, size: 48, borderRadius: 14),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -889,7 +897,10 @@ class _PlaylistBottomNav extends StatelessWidget {
                 onTap: () => context.go(items[i].targetRoute),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 220),
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 8,
+                  ),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(16),
                     color: items[i].sourceTab == activeTab
@@ -936,10 +947,14 @@ class _PlaylistNowPlayingBar extends StatefulWidget {
   const _PlaylistNowPlayingBar({
     required this.userCadence,
     required this.tracks,
+    required this.accentColor,
+    required this.bgColor,
   });
 
   final int userCadence;
   final List<SpotifyTrack> tracks;
+  final Color accentColor;
+  final Color bgColor;
 
   @override
   State<_PlaylistNowPlayingBar> createState() => _PlaylistNowPlayingBarState();
@@ -954,11 +969,26 @@ class _PlaylistNowPlayingBarState extends State<_PlaylistNowPlayingBar> {
   String? _artist;
   String? _image;
   String _trackUri = '';
+  int _trackBpm = 0;
 
   @override
   void initState() {
     super.initState();
     _bindRemote();
+  }
+
+  @override
+  void didUpdateWidget(covariant _PlaylistNowPlayingBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_trackBpm > 0 ||
+        _trackUri.isEmpty ||
+        widget.tracks == oldWidget.tracks) {
+      return;
+    }
+    final resolvedBpm = _bpmForTrackUri(_trackUri);
+    if (resolvedBpm > 0) {
+      setState(() => _trackBpm = resolvedBpm);
+    }
   }
 
   @override
@@ -984,6 +1014,7 @@ class _PlaylistNowPlayingBarState extends State<_PlaylistNowPlayingBar> {
         _title = state.trackName;
         _artist = state.artistName;
         _image = state.resolvedImageUrl;
+        _trackBpm = _bpmForTrackUri(state.trackUri);
       });
     });
 
@@ -1007,11 +1038,20 @@ class _PlaylistNowPlayingBarState extends State<_PlaylistNowPlayingBar> {
         _title = playerState.trackName;
         _artist = playerState.artistName;
         _image = playerState.resolvedImageUrl;
+        _trackBpm = _bpmForTrackUri(playerState.trackUri);
       });
     } catch (_) {
       if (!mounted) return;
       setState(() => _isLoaded = true);
     }
+  }
+
+  int _bpmForTrackUri(String trackUri) {
+    if (trackUri.isEmpty) return 0;
+    for (final track in widget.tracks) {
+      if (track.spotifyUri == trackUri) return track.bpm;
+    }
+    return widget.tracks.isNotEmpty ? widget.tracks.first.bpm : 0;
   }
 
   Future<void> _togglePlayback() async {
@@ -1040,14 +1080,13 @@ class _PlaylistNowPlayingBarState extends State<_PlaylistNowPlayingBar> {
       for (final track in widget.tracks)
         if (track.spotifyUri.isNotEmpty) track.spotifyUri: track.bpm,
     };
-    final fallbackBpm = widget.tracks.isNotEmpty ? widget.tracks.first.bpm : 0;
     context.push(
       '/now-playing',
       extra: NowPlayingPageArgs(
         trackTitle: title,
         trackArtist: _artist ?? '',
         trackImageAsset: _image ?? '',
-        trackBpm: trackBpmsByUri[_trackUri] ?? fallbackBpm,
+        trackBpm: trackBpmsByUri[_trackUri] ?? _trackBpm,
         userCadence: widget.userCadence,
         spotifyUri: _trackUri.isNotEmpty ? _trackUri : null,
         allowedTrackUris: allowedTrackUris,
@@ -1074,12 +1113,9 @@ class _PlaylistNowPlayingBarState extends State<_PlaylistNowPlayingBar> {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              AppColors.surfaceFloating,
-              AppColors.surfaceFloating.withValues(alpha: 0.8),
-            ],
+            colors: [widget.bgColor, widget.bgColor.withValues(alpha: 0.8)],
           ),
-          glowColor: AppColors.primary.withValues(alpha: 0.18),
+          glowColor: widget.accentColor.withValues(alpha: 0.18),
         ),
         child: Row(
           children: [
@@ -1127,6 +1163,11 @@ class _PlaylistNowPlayingBarState extends State<_PlaylistNowPlayingBar> {
               ),
             ),
             const SizedBox(width: 12),
+            _PlaylistTrackPaceBadge(
+              trackBpm: _trackBpm,
+              userCadence: widget.userCadence,
+            ),
+            const SizedBox(width: 12),
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: _togglePlayback,
@@ -1159,6 +1200,57 @@ class _PlaylistNowPlayingBarState extends State<_PlaylistNowPlayingBar> {
   }
 }
 
+class _PlaylistTrackPaceBadge extends StatelessWidget {
+  const _PlaylistTrackPaceBadge({
+    required this.trackBpm,
+    required this.userCadence,
+  });
+
+  final int trackBpm;
+  final int userCadence;
+
+  @override
+  Widget build(BuildContext context) {
+    if (trackBpm <= 0) return const SizedBox.shrink();
+
+    final diff = (trackBpm - userCadence).abs();
+    final color = diff <= 2 ? AppColors.primaryBright : AppColors.warning;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.24), width: 0.5),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '$trackBpm',
+            style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              height: 1,
+            ),
+          ),
+          const SizedBox(height: 1),
+          Text(
+            'BPM',
+            style: TextStyle(
+              color: color.withValues(alpha: 0.6),
+              fontSize: 7,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.4,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _PlaylistNavItem {
   const _PlaylistNavItem({
     required this.label,
@@ -1179,7 +1271,6 @@ class _BpmRange {
   final int min;
   final int max;
 }
-
 
 String _webUrlFromSpotifyUri(String spotifyUri) {
   final segments = spotifyUri.split(':');

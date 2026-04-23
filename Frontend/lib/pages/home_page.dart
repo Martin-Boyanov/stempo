@@ -6,7 +6,6 @@ import 'package:flutter/scheduler.dart';
 import 'package:go_router/go_router.dart';
 import 'package:pedometer/pedometer.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:palette_generator/palette_generator.dart';
 
 import '../controllers/auth_controller.dart';
 import '../controllers/spotify_remote_service.dart';
@@ -18,6 +17,7 @@ import '../ui/theme/app_fx.dart';
 import '../ui/theme/colors.dart';
 import '../ui/widgets/loader.dart';
 import '../ui/widgets/media_cover.dart';
+import '../ui/widgets/now_playing_bar.dart';
 import 'library_page.dart';
 import 'now_playing_page.dart';
 import 'playlist_page.dart';
@@ -219,104 +219,28 @@ class _HomePageState extends State<HomePage>
     }
   }
 
-  Color _songAccentColor = AppColors.primary;
-  Color _songBgColor = AppColors.surfaceFloating;
-  String? _lastTrackUri;
-
-  Future<void> _updateSongPalette(String? imageUrl, String? trackUri) async {
-    if (imageUrl == null || imageUrl.isEmpty) {
-      setState(() {
-        _songAccentColor = AppColors.primary;
-        _songBgColor = AppColors.surfaceFloating;
-        _lastTrackUri = null;
-      });
-      return;
-    }
-
-    final imageProvider = imageUrl.startsWith('http')
-        ? NetworkImage(imageUrl)
-        : AssetImage(imageUrl) as ImageProvider;
-
-    try {
-      final palette = await PaletteGenerator.fromImageProvider(
-        imageProvider,
-        maximumColorCount: 20,
-      );
-      if (!mounted) return;
-
-      final mainColor = palette.vibrantColor?.color ??
-          palette.lightVibrantColor?.color ??
-          palette.dominantColor?.color ??
-          palette.mutedColor?.color ??
-          AppColors.primary;
-
-      final dominant = palette.dominantColor?.color ??
-          palette.darkMutedColor?.color ??
-          Colors.black;
-      final luminance = dominant.computeLuminance();
-
-      setState(() {
-        _songAccentColor = _ensureVisible(mainColor);
-        if (luminance < 0.05) {
-          _songBgColor = Color.alphaBlend(
-            Colors.white.withValues(alpha: 0.15),
-            dominant.withValues(alpha: 0.92),
-          );
-        } else if (luminance > 0.35) {
-          _songBgColor = Color.alphaBlend(
-            Colors.black.withValues(alpha: 0.75),
-            dominant.withValues(alpha: 0.92),
-          );
-        } else {
-          _songBgColor = dominant.withValues(alpha: 0.9);
-        }
-      });
-    } catch (_) {}
-  }
-
-  Color _ensureVisible(Color color) {
-    final hsl = HSLColor.fromColor(color);
-    if (hsl.lightness < 0.2) {
-      return hsl.withLightness(0.5).withSaturation(0.8).toColor();
-    }
-    return color;
-  }
-
   void _bindRemote() {
-    _playerSubscription =
-        SpotifyRemoteService.instance.playerStateStream().listen((state) {
-      if (!mounted) return;
-      setState(() {
-        _playerState = state;
-        final hasNewTrack = state.trackUri != _lastTrackUri;
-        if (state.resolvedImageUrl != null && hasNewTrack) {
-          _lastTrackUri = state.trackUri;
-          _updateSongPalette(state.resolvedImageUrl, state.trackUri);
-        } else if (state.trackUri.isEmpty) {
-          _songAccentColor = AppColors.primary;
-          _songBgColor = AppColors.surfaceFloating;
-          _lastTrackUri = null;
-          _currentTrackBpm = null;
-          _currentTrackBpmUri = null;
-        }
-      });
-      unawaited(_refreshCurrentTrackBpm(state.trackUri));
-    });
+    _playerSubscription = SpotifyRemoteService.instance
+        .playerStateStream()
+        .listen((state) {
+          if (!mounted) return;
+          setState(() {
+            _playerState = state;
+            if (state.trackUri.isEmpty) {
+              _currentTrackBpm = null;
+              _currentTrackBpmUri = null;
+            }
+          });
+          unawaited(_refreshCurrentTrackBpm(state.trackUri));
+        });
 
     unawaited(() async {
       try {
-        final initialState = await SpotifyRemoteService.instance.getPlayerState();
+        final initialState = await SpotifyRemoteService.instance
+            .getPlayerState();
         if (!mounted || initialState == null) return;
         setState(() {
           _playerState = initialState;
-          if (initialState.resolvedImageUrl != null &&
-              initialState.trackUri.isNotEmpty) {
-            _lastTrackUri = initialState.trackUri;
-            _updateSongPalette(
-              initialState.resolvedImageUrl,
-              initialState.trackUri,
-            );
-          }
         });
         await _refreshCurrentTrackBpm(initialState.trackUri);
       } catch (_) {}
@@ -428,9 +352,7 @@ class _HomePageState extends State<HomePage>
     final auth = AuthScope.watch(context);
     if (auth.isConnected && auth.isLoadingData && auth.playlists.isEmpty) {
       return const Scaffold(
-        body: WalkingLoadingScreen(
-          title: 'Gathering data',
-        ),
+        body: WalkingLoadingScreen(title: 'Gathering data'),
       );
     }
 
@@ -465,13 +387,13 @@ class _HomePageState extends State<HomePage>
                           (_playerState?.trackName.isNotEmpty ?? false)) ...[
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 8),
-                          child: _NowPlayingBar(
-                            trackTitle: _playerState?.trackName ?? '',
-                            trackArtist: _playerState?.artistName ?? '',
-                            trackImageAsset: _playerState?.resolvedImageUrl ?? '',
-                            accentColor: _songAccentColor,
-                            bgColor: _songBgColor,
-                            trackBpm: _currentTrackBpm ?? _mockState.trackBpm,
+                          child: StempoNowPlayingBar(
+                            initialTrackTitle: _playerState?.trackName ?? '',
+                            initialTrackArtist: _playerState?.artistName ?? '',
+                            initialTrackImageAsset:
+                                _playerState?.resolvedImageUrl ?? '',
+                            initialTrackBpm:
+                                _currentTrackBpm ?? _mockState.trackBpm,
                             userCadence: auth.userCadence,
                           ),
                         ),
@@ -480,7 +402,8 @@ class _HomePageState extends State<HomePage>
                       _BottomNav(
                         items: _tabs,
                         selectedIndex: _selectedTab,
-                        onSelected: (index) => setState(() => _selectedTab = index),
+                        onSelected: (index) =>
+                            setState(() => _selectedTab = index),
                       ),
                     ],
                   ),
@@ -494,10 +417,9 @@ class _HomePageState extends State<HomePage>
   }
 
   Widget _buildSelectedTabBody(SpotifyAuthController auth) {
-    final playlists =
-        auth.playlists.isNotEmpty
-            ? auth.playlists
-            : (auth.isConnected ? const <TempoPlaylist>[] : mockTempoPlaylists);
+    final playlists = auth.playlists.isNotEmpty
+        ? auth.playlists
+        : (auth.isConnected ? const <TempoPlaylist>[] : mockTempoPlaylists);
 
     switch (_selectedTab) {
       case 0:
@@ -524,13 +446,15 @@ class _HomePageState extends State<HomePage>
           ),
           recentSessions: auth.playlists
               .where((p) => p.wasRecentlyPlayed)
-              .map((p) => SearchRecentSession(
-                title: p.title,
-                subtitle: p.subtitle,
-                detail: '${p.bpm} BPM',
-                bpm: p.bpm,
-                imageAsset: p.imageAsset,
-              ))
+              .map(
+                (p) => SearchRecentSession(
+                  title: p.title,
+                  subtitle: p.subtitle,
+                  detail: '${p.bpm} BPM',
+                  bpm: p.bpm,
+                  imageAsset: p.imageAsset,
+                ),
+              )
               .toList(),
           catalogEntries: auth.searchEntries
               .map(SearchCatalogEntry.fromSpotify)
@@ -548,10 +472,8 @@ class _HomePageState extends State<HomePage>
           catalogEntries: auth.searchEntries
               .map(SearchCatalogEntry.fromSpotify)
               .toList(growable: false),
-          onOpenPlaylist: (playlist) => _openPlaylist(
-            playlist,
-            sourceTab: PlaylistSourceTab.modes,
-          ),
+          onOpenPlaylist: (playlist) =>
+              _openPlaylist(playlist, sourceTab: PlaylistSourceTab.modes),
         );
       default:
         return _HomeTabView(
@@ -652,11 +574,7 @@ class _HomeTabView extends StatelessWidget {
                 ],
               ),
             ),
-            _DailyStepsHero(
-              state: state,
-              pulse: pulse,
-              todaySteps: todaySteps,
-            ),
+            _DailyStepsHero(state: state, pulse: pulse, todaySteps: todaySteps),
             const SizedBox(height: 14),
             _SectionLabel(
               title: 'Recents',
@@ -682,10 +600,7 @@ class _HomeTabView extends StatelessWidget {
                 onTitleTap: onRefreshPlaylists,
               ),
               const SizedBox(height: 12),
-              _JumpBackInRow(
-                items: bpmRecents,
-                onTapPlaylist: onOpenPlaylist,
-              ),
+              _JumpBackInRow(items: bpmRecents, onTapPlaylist: onOpenPlaylist),
             ],
             const SizedBox(height: 18),
             _StartSessionCard(
@@ -789,7 +704,8 @@ class _ModesTabViewState extends State<_ModesTabView> {
                       animation: _pageController,
                       builder: (context, _) {
                         final page = _pageController.hasClients
-                            ? (_pageController.page ?? _pageController.initialPage.toDouble())
+                            ? (_pageController.page ??
+                                  _pageController.initialPage.toDouble())
                             : 0.0;
                         final isActive = (page.round() == i);
                         return AnimatedContainer(
@@ -1068,22 +984,21 @@ class _ModesResultsScreen extends StatelessWidget {
               ],
             ),
           const SizedBox(height: 18),
-          _SectionLabel(
-            title: 'Tracks',
-            trailing: 'Inside the same BPM lane',
-          ),
+          _SectionLabel(title: 'Tracks', trailing: 'Inside the same BPM lane'),
           const SizedBox(height: 12),
           if (filteredTracks.isEmpty)
             const _InlineEmptyState(
               title: 'No track previews here yet',
-              subtitle: 'Load more playlists and this mode will fill in with songs too.',
+              subtitle:
+                  'Load more playlists and this mode will fill in with songs too.',
             )
           else
             Column(
               children: [
                 for (var i = 0; i < filteredTracks.length; i++) ...[
                   _ModeTrackCard(track: filteredTracks[i], accent: mode.accent),
-                  if (i != filteredTracks.length - 1) const SizedBox(height: 10),
+                  if (i != filteredTracks.length - 1)
+                    const SizedBox(height: 10),
                 ],
               ],
             ),
@@ -1243,7 +1158,10 @@ class _ModePlaylistCard extends StatelessWidget {
                     spacing: 8,
                     runSpacing: 8,
                     children: [
-                      _HeaderPill(label: '${playlist.bpm} BPM', accent: mode.accent),
+                      _HeaderPill(
+                        label: '${playlist.bpm} BPM',
+                        accent: mode.accent,
+                      ),
                       _HeaderPill(
                         label: '${playlist.trackCount} tracks',
                         accent: AppColors.primaryBright,
@@ -1273,11 +1191,7 @@ class _ModeTrackCard extends StatelessWidget {
       padding: const EdgeInsets.all(12),
       child: Row(
         children: [
-          MediaCover(
-            imageAsset: track.imageAsset,
-            size: 58,
-            borderRadius: 16,
-          ),
+          MediaCover(imageAsset: track.imageAsset, size: 58, borderRadius: 16),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -3023,60 +2937,60 @@ class _StatsFactCard extends StatelessWidget {
       radius: 24,
       glowColor: accent,
       child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(icon, size: 18, color: accent),
-                const Spacer(),
-                Container(
-                  width: 26,
-                  height: 26,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(999),
-                    color: accent.withValues(alpha: 0.12),
-                  ),
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 18, color: accent),
+              const Spacer(),
+              Container(
+                width: 26,
+                height: 26,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(999),
+                  color: accent.withValues(alpha: 0.12),
                 ),
-              ],
-            ),
-            const Spacer(),
-            Text(
-              title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
               ),
+            ],
+          ),
+          const Spacer(),
+          Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
             ),
-            const SizedBox(height: 8),
-            Text(
-              value,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 18,
-                height: 1.05,
-                fontWeight: FontWeight.w800,
-              ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 18,
+              height: 1.05,
+              fontWeight: FontWeight.w800,
             ),
-            const SizedBox(height: 8),
-            Text(
-              caption,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 12,
-                height: 1.35,
-                fontWeight: FontWeight.w600,
-              ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            caption,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 12,
+              height: 1.35,
+              fontWeight: FontWeight.w600,
             ),
-          ],
-        ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -3395,10 +3309,7 @@ class _ActionPillButton extends StatelessWidget {
 }
 
 class _JumpBackInRow extends StatelessWidget {
-  const _JumpBackInRow({
-    required this.items,
-    required this.onTapPlaylist,
-  });
+  const _JumpBackInRow({required this.items, required this.onTapPlaylist});
 
   final List<TempoPlaylist> items;
   final ValueChanged<TempoPlaylist> onTapPlaylist;
@@ -3415,10 +3326,7 @@ class _JumpBackInRow extends StatelessWidget {
           final item = items[index];
           return SizedBox(
             width: 152,
-            child: _JumpBackCard(
-              item: item,
-              onTap: () => onTapPlaylist(item),
-            ),
+            child: _JumpBackCard(item: item, onTap: () => onTapPlaylist(item)),
           );
         },
       ),
@@ -3427,10 +3335,7 @@ class _JumpBackInRow extends StatelessWidget {
 }
 
 class _JumpBackCard extends StatelessWidget {
-  const _JumpBackCard({
-    required this.item,
-    required this.onTap,
-  });
+  const _JumpBackCard({required this.item, required this.onTap});
 
   final TempoPlaylist item;
   final VoidCallback onTap;
@@ -3468,8 +3373,8 @@ class _JumpBackCard extends StatelessWidget {
     final bpmFooterText = bpmData.min != null && bpmData.max != null
         ? '${bpmData.min}-${bpmData.max} BPM'
         : bpmData.single != null
-            ? '${bpmData.single} BPM'
-            : null;
+        ? '${bpmData.single} BPM'
+        : null;
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -3847,7 +3752,6 @@ class _BottomNav extends StatelessWidget {
   }
 }
 
-
 class _NowPlayingBar extends StatefulWidget {
   const _NowPlayingBar({
     required this.trackTitle,
@@ -3985,10 +3889,7 @@ class _NowPlayingBarState extends State<_NowPlayingBar> {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              widget.bgColor,
-              widget.bgColor.withValues(alpha: 0.8),
-            ],
+            colors: [widget.bgColor, widget.bgColor.withValues(alpha: 0.8)],
           ),
           glowColor: widget.accentColor.withValues(alpha: 0.18),
         ),
@@ -4056,17 +3957,15 @@ class _NowPlayingBarState extends State<_NowPlayingBar> {
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: [AppColors.primary, AppColors.primary.withValues(alpha: 0.8)],
+                    colors: [
+                      AppColors.primary,
+                      AppColors.primary.withValues(alpha: 0.8),
+                    ],
                   ),
-                  boxShadow: AppFx.softGlow(
-                    AppColors.primary,
-                    strength: 0.35,
-                  ),
+                  boxShadow: AppFx.softGlow(AppColors.primary, strength: 0.35),
                 ),
                 child: Icon(
-                  _isPaused
-                      ? Icons.play_arrow_rounded
-                      : Icons.pause_rounded,
+                  _isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
                   color: AppColors.background,
                   size: 26,
                 ),
@@ -4103,10 +4002,7 @@ class _TrackPaceBadge extends StatelessWidget {
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: color.withValues(alpha: 0.24),
-          width: 0.5,
-        ),
+        border: Border.all(color: color.withValues(alpha: 0.24), width: 0.5),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,

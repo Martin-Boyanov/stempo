@@ -24,7 +24,7 @@ class SpotifyAuthController extends ChangeNotifier {
   static const _defaultLocalBackendBaseUrl = 'http://localhost:8010';
   static const _defaultUserCadence = 108;
   static const _defaultBpmTolerance = 6;
-  
+
   int _userCadence = _defaultUserCadence;
   int _bpmTolerance = _defaultBpmTolerance;
   static const _backendRequestTimeout = Duration(seconds: 20);
@@ -57,6 +57,7 @@ class SpotifyAuthController extends ChangeNotifier {
   List<SpotifySearchEntry> _searchEntries = const [];
   final Map<String, List<SpotifyTrack>> _playlistTracks = {};
   final Map<String, List<SpotifyTrack>> _playlistDisplayTracks = {};
+  final Map<String, _BpmRange> _playlistTrackRanges = {};
   final Map<String, String> _playlistTrackErrors = {};
   final Map<String, String?> _playlistTrackNextUrls = {};
   final Map<String, int?> _trackBpmCache = {};
@@ -79,7 +80,7 @@ class SpotifyAuthController extends ChangeNotifier {
   List<TempoPlaylist> get playlists => _playlists;
   int get userCadence => _userCadence;
   int get bpmTolerance => _bpmTolerance;
-  
+
   set userCadence(int value) {
     if (_userCadence == value) return;
     _userCadence = value;
@@ -93,6 +94,7 @@ class SpotifyAuthController extends ChangeNotifier {
     unawaited(_saveSettings());
     notifyListeners();
   }
+
   final Map<String, TempoPlaylist> _playlistCache = {};
 
   TempoPlaylist? findPlaylistById(String id) {
@@ -105,6 +107,7 @@ class SpotifyAuthController extends ChangeNotifier {
   void cachePlaylist(TempoPlaylist playlist) {
     _playlistCache[playlist.id] = playlist;
   }
+
   List<SpotifySearchEntry> get searchEntries => _searchEntries;
   List<SpotifyTrack> allTracksForPlaylist(String playlistId) =>
       _playlistDisplayTracks[playlistId] ?? const [];
@@ -124,8 +127,7 @@ class SpotifyAuthController extends ChangeNotifier {
       _expiresAt!.isAfter(DateTime.now());
 
   String get _clientId => dotenv.env[_clientIdKey] ?? '';
-  String get _redirectUri =>
-      dotenv.env[_redirectUriKey] ?? _defaultRedirectUri;
+  String get _redirectUri => dotenv.env[_redirectUriKey] ?? _defaultRedirectUri;
   String get _backendBaseUrl {
     final configured = (dotenv.env['BACKEND_BASE_URL'] ?? '').trim();
     if (configured.isNotEmpty) return configured;
@@ -143,13 +145,13 @@ class SpotifyAuthController extends ChangeNotifier {
     if (expiresAt.isAfter(refreshThreshold)) return true;
     return refreshAccessToken();
   }
+
   Future<bool> connectWithSpotifyPkce() async {
     final clientId = _clientId;
 
     if (clientId.isEmpty) {
       _status = SpotifyConnectionStatus.error;
-      _errorMessage =
-          'Missing Spotify client ID in .env.';
+      _errorMessage = 'Missing Spotify client ID in .env.';
       notifyListeners();
       return false;
     }
@@ -198,7 +200,11 @@ class SpotifyAuthController extends ChangeNotifier {
         return false;
       }
 
-      return _exchangeAuthorizationCode(clientId: clientId, code: code, verifier: verifier);
+      return _exchangeAuthorizationCode(
+        clientId: clientId,
+        code: code,
+        verifier: verifier,
+      );
     } catch (_) {
       // If we are currently handling the callback via deep link,
       // or we already connected, do not show an error here.
@@ -209,7 +215,7 @@ class SpotifyAuthController extends ChangeNotifier {
           _status == SpotifyConnectionStatus.connecting) {
         return false;
       }
-      
+
       _status = SpotifyConnectionStatus.error;
       _errorMessage = 'Spotify sign-in failed. Please try again.';
       notifyListeners();
@@ -229,7 +235,10 @@ class SpotifyAuthController extends ChangeNotifier {
       return false;
     }
 
-    if (clientId.isEmpty || code == null || code.isEmpty || _pendingVerifier == null) {
+    if (clientId.isEmpty ||
+        code == null ||
+        code.isEmpty ||
+        _pendingVerifier == null) {
       _status = SpotifyConnectionStatus.error;
       _errorMessage = 'Spotify callback could not be completed.';
       notifyListeners();
@@ -316,6 +325,7 @@ class SpotifyAuthController extends ChangeNotifier {
     _searchEntries = const [];
     _playlistTracks.clear();
     _playlistDisplayTracks.clear();
+    _playlistTrackRanges.clear();
     _playlistTrackErrors.clear();
     _playlistTrackNextUrls.clear();
     _sessionPlaylistCache.clear();
@@ -327,10 +337,17 @@ class SpotifyAuthController extends ChangeNotifier {
 
   Future<void> _saveSession() async {
     final prefs = await SharedPreferences.getInstance();
-    if (_accessToken != null) await prefs.setString('spotify_access_token', _accessToken!);
-    if (_refreshToken != null) await prefs.setString('spotify_refresh_token', _refreshToken!);
+    if (_accessToken != null) {
+      await prefs.setString('spotify_access_token', _accessToken!);
+    }
+    if (_refreshToken != null) {
+      await prefs.setString('spotify_refresh_token', _refreshToken!);
+    }
     if (_expiresAt != null) {
-      await prefs.setString('spotify_expires_at', _expiresAt!.toIso8601String());
+      await prefs.setString(
+        'spotify_expires_at',
+        _expiresAt!.toIso8601String(),
+      );
     }
     await _saveSettings();
   }
@@ -350,16 +367,18 @@ class SpotifyAuthController extends ChangeNotifier {
       _expiresAt = DateTime.parse(expiresAtStr);
     }
 
-    if (_accessToken != null && _expiresAt != null && _expiresAt!.isAfter(DateTime.now())) {
+    if (_accessToken != null &&
+        _expiresAt != null &&
+        _expiresAt!.isAfter(DateTime.now())) {
       _status = SpotifyConnectionStatus.connected;
       unawaited(loadUserData());
     } else if (_refreshToken != null) {
       await refreshAccessToken();
     }
-    
+
     _userCadence = prefs.getInt('user_cadence') ?? _defaultUserCadence;
     _bpmTolerance = prefs.getInt('bpm_tolerance') ?? _defaultBpmTolerance;
-    
+
     notifyListeners();
   }
 
@@ -372,7 +391,6 @@ class SpotifyAuthController extends ChangeNotifier {
     await prefs.remove('user_cadence');
     await prefs.remove('bpm_tolerance');
   }
-
 
   Future<bool> _exchangeAuthorizationCode({
     required String clientId,
@@ -474,10 +492,13 @@ class SpotifyAuthController extends ChangeNotifier {
 
       _profile = _parseProfile(profileJson);
       _playlists = _parsePlaylists(playlistsJson);
-      _searchEntries = _playlists.map(spotifyPlaylistToSearchEntry).toList(growable: false);
+      _searchEntries = _playlists
+          .map(spotifyPlaylistToSearchEntry)
+          .toList(growable: false);
       _errorMessage = null;
     } catch (_) {
-      _errorMessage = 'Spotify connected, but your account data could not be loaded.';
+      _errorMessage =
+          'Spotify connected, but your account data could not be loaded.';
     } finally {
       _isLoadingData = false;
       notifyListeners();
@@ -489,9 +510,15 @@ class SpotifyAuthController extends ChangeNotifier {
     int? targetBpm,
     bool forceRefresh = false,
   }) async {
+    final usedTargetBpm = targetBpm ?? _userCadence;
+    final requestedRange = _BpmRange(
+      min: usedTargetBpm - _bpmTolerance,
+      max: usedTargetBpm + _bpmTolerance,
+    );
     final hasCachedTracks =
         _playlistTracks.containsKey(playlistId) &&
-        _playlistDisplayTracks.containsKey(playlistId);
+        _playlistDisplayTracks.containsKey(playlistId) &&
+        _playlistTrackRanges[playlistId] == requestedRange;
     if (playlistId.isEmpty ||
         (!forceRefresh && hasCachedTracks) ||
         _loadingPlaylistIds.contains(playlistId)) {
@@ -527,6 +554,7 @@ class SpotifyAuthController extends ChangeNotifier {
     if (forceRefresh) {
       _playlistTracks.remove(playlistId);
       _playlistDisplayTracks.remove(playlistId);
+      _playlistTrackRanges.remove(playlistId);
       _playlistTrackNextUrls.remove(playlistId);
     }
     _playlistTrackErrors.remove(playlistId);
@@ -545,26 +573,24 @@ class SpotifyAuthController extends ChangeNotifier {
         'spotify_tracks playlist=$playlistId loaded=${rawTracks.length} hasMore=${firstPage.nextUrl != null}',
       );
 
-      final usedTargetBpm = targetBpm ?? _userCadence;
-      final minBpm = usedTargetBpm - _bpmTolerance;
-      final maxBpm = usedTargetBpm + _bpmTolerance;
       final filteredTracks = await _filterTracksByBpm(
         tracks: rawTracks,
-        minBpm: minBpm,
-        maxBpm: maxBpm,
+        minBpm: requestedRange.min,
+        maxBpm: requestedRange.max,
       );
       _playlistTracks[playlistId] = filteredTracks;
+      _playlistTrackRanges[playlistId] = requestedRange;
       if (rawTracks.isNotEmpty && filteredTracks.isEmpty) {
         if (_lastBackendTimedOut && _lastResolvedBpmCount == 0) {
           _playlistTrackErrors[playlistId] =
               'Backend BPM lookup timed out. Make sure backend is running and try again.';
         } else {
           _playlistTrackErrors[playlistId] =
-              'No tracks in $minBpm-$maxBpm BPM were found for this playlist.';
+              'No tracks in ${requestedRange.min}-${requestedRange.max} BPM were found for this playlist.';
         }
       }
       _debugTrackLoad(
-        'done playlist=$playlistId kept=${filteredTracks.length} range=$minBpm-$maxBpm',
+        'done playlist=$playlistId kept=${filteredTracks.length} range=${requestedRange.min}-${requestedRange.max}',
       );
     } on _ApiRequestException catch (e) {
       _playlistTrackErrors[playlistId] =
@@ -605,33 +631,35 @@ class SpotifyAuthController extends ChangeNotifier {
     notifyListeners();
 
     try {
+      final usedTargetBpm = targetBpm ?? _userCadence;
+      final requestedRange = _BpmRange(
+        min: usedTargetBpm - _bpmTolerance,
+        max: usedTargetBpm + _bpmTolerance,
+      );
       final existingDisplayTracks =
           _playlistDisplayTracks[playlistId] ?? const <SpotifyTrack>[];
       final existingFilteredTracks =
-          _playlistTracks[playlistId] ?? const <SpotifyTrack>[];
+          _playlistTrackRanges[playlistId] == requestedRange
+          ? _playlistTracks[playlistId] ?? const <SpotifyTrack>[]
+          : const <SpotifyTrack>[];
       final page = await _fetchPlaylistTracksPage(
         nextUrl,
         startIndex: existingDisplayTracks.length,
       );
-      final mergedDisplayTracks = [
-        ...existingDisplayTracks,
-        ...page.tracks,
-      ];
+      final mergedDisplayTracks = [...existingDisplayTracks, ...page.tracks];
       _playlistDisplayTracks[playlistId] = mergedDisplayTracks;
       _playlistTrackNextUrls[playlistId] = page.nextUrl;
 
-      final usedTargetBpm = targetBpm ?? _userCadence;
-      final minBpm = usedTargetBpm - _bpmTolerance;
-      final maxBpm = usedTargetBpm + _bpmTolerance;
       final filteredPageTracks = await _filterTracksByBpm(
         tracks: page.tracks,
-        minBpm: minBpm,
-        maxBpm: maxBpm,
+        minBpm: requestedRange.min,
+        maxBpm: requestedRange.max,
       );
       _playlistTracks[playlistId] = [
         ...existingFilteredTracks,
         ...filteredPageTracks,
       ];
+      _playlistTrackRanges[playlistId] = requestedRange;
       _playlistTrackErrors.remove(playlistId);
       _debugTrackLoad(
         'spotify_tracks_page_loaded playlist=$playlistId pageTracks=${page.tracks.length} total=${mergedDisplayTracks.length} keptAdded=${filteredPageTracks.length} hasMore=${page.nextUrl != null}',
@@ -681,7 +709,8 @@ class SpotifyAuthController extends ChangeNotifier {
           }
         }
       }
-    } else if (playlistId.startsWith('search-') || playlistId.startsWith('recent-')) {
+    } else if (playlistId.startsWith('search-') ||
+        playlistId.startsWith('recent-')) {
       realId = playlistId;
     }
     return realId;
@@ -698,25 +727,22 @@ class SpotifyAuthController extends ChangeNotifier {
         .toList(growable: false)
         .asMap()
         .entries
-        .map((entry) => (
-              index: startIndex + entry.key,
-              item: entry.value,
-            ))
-        .map((entry) => (
-              index: entry.index,
-              track: entry.item['track'] ?? entry.item['item'],
-            ))
+        .map((entry) => (index: startIndex + entry.key, item: entry.value))
+        .map(
+          (entry) => (
+            index: entry.index,
+            track: entry.item['track'] ?? entry.item['item'],
+          ),
+        )
         .where((entry) => entry.track is Map<String, dynamic>)
-        .map((entry) => (
-              index: entry.index,
-              track: entry.track as Map<String, dynamic>,
-            ))
+        .map(
+          (entry) =>
+              (index: entry.index, track: entry.track as Map<String, dynamic>),
+        )
         .where((entry) => (entry.track['type'] as String?) == 'track')
         .map(
-          (entry) => spotifyTrackFromJson(
-            entry.track,
-            playlistPosition: entry.index,
-          ),
+          (entry) =>
+              spotifyTrackFromJson(entry.track, playlistPosition: entry.index),
         )
         .where((track) => track.spotifyUri.isNotEmpty && track.id.isNotEmpty)
         .toList(growable: false);
@@ -748,10 +774,10 @@ class SpotifyAuthController extends ChangeNotifier {
       return cached.playlistUri;
     }
 
-    final targetBpm = (minBpm + maxBpm) ~/ 2;
-    final playlistTitle = '${sourcePlaylist.title} $targetBpm BPM';
+    final playlistTitle =
+        '${_baseGeneratedPlaylistTitle(sourcePlaylist.title)} $minBpm - $maxBpm bpm';
     final description =
-        'Auto-generated by stempo from "${sourcePlaylist.title}" for $targetBpm BPM ($minBpm-$maxBpm range).';
+        'Auto-generated by stempo from "${sourcePlaylist.title}" for $minBpm-$maxBpm BPM.';
     _debugTrackLoad(
       'session_playlist_create_start source=${sourcePlaylist.id} name="$playlistTitle" tracks=${tracks.length}',
     );
@@ -786,11 +812,7 @@ class SpotifyAuthController extends ChangeNotifier {
 
       final created = await _postJson(
         'https://api.spotify.com/v1/users/$userId/playlists',
-        {
-          'name': playlistTitle,
-          'description': description,
-          'public': false,
-        },
+        {'name': playlistTitle, 'description': description, 'public': false},
       );
       final playlistId = created['id'] as String? ?? '';
       final playlistUri = created['uri'] as String? ?? '';
@@ -819,9 +841,7 @@ class SpotifyAuthController extends ChangeNotifier {
         );
         await _postJson(
           'https://api.spotify.com/v1/playlists/$playlistId/tracks',
-          {
-            'uris': chunk,
-          },
+          {'uris': chunk},
         );
       }
 
@@ -844,7 +864,9 @@ class SpotifyAuthController extends ChangeNotifier {
       );
       return null;
     } catch (e) {
-      _debugTrackLoad('session_playlist_error source=${sourcePlaylist.id} detail=$e');
+      _debugTrackLoad(
+        'session_playlist_error source=${sourcePlaylist.id} detail=$e',
+      );
       return null;
     }
   }
@@ -885,9 +907,7 @@ class SpotifyAuthController extends ChangeNotifier {
           'player_play_error status=${response.statusCode} body=$payload',
         );
       } else {
-        _debugTrackLoad(
-          'player_play_ok context=$playlistUri offset=$trackUri',
-        );
+        _debugTrackLoad('player_play_ok context=$playlistUri offset=$trackUri');
       }
       return ok;
     } catch (e) {
@@ -944,30 +964,31 @@ class SpotifyAuthController extends ChangeNotifier {
     _lastResolvedBpmCount = bpmFetchResult.items.length;
     _lastBackendTimedOut = bpmFetchResult.timedOut;
 
-    final resolvedTracks = tracks.map((track) {
-      final bpm = bpmFetchResult.items[track.id];
-      if (bpm == null || bpm < minBpm || bpm > maxBpm) {
-        return null;
-      }
-      return SpotifyTrack(
-        id: track.id,
-        title: track.title,
-        artistLine: track.artistLine,
-        imageUrl: track.imageUrl,
-        spotifyUri: track.spotifyUri,
-        durationMs: track.durationMs,
-        bpm: bpm.round(),
-        playlistPosition: track.playlistPosition,
-      );
-    }).toList(growable: false);
+    final resolvedTracks = tracks
+        .map((track) {
+          final bpm = bpmFetchResult.items[track.id];
+          if (bpm == null || bpm < minBpm || bpm > maxBpm) {
+            return null;
+          }
+          return SpotifyTrack(
+            id: track.id,
+            title: track.title,
+            artistLine: track.artistLine,
+            imageUrl: track.imageUrl,
+            spotifyUri: track.spotifyUri,
+            durationMs: track.durationMs,
+            bpm: bpm.round(),
+            playlistPosition: track.playlistPosition,
+          );
+        })
+        .toList(growable: false);
     return resolvedTracks.whereType<SpotifyTrack>().toList(growable: false);
   }
 
   Future<_BpmBatchFetchResult> _fetchTrackBpmsBatch(
     List<String> spotifyIds,
   ) async {
-    if (spotifyIds.isEmpty ||
-        _backendBaseUrl.isEmpty) {
+    if (spotifyIds.isEmpty || _backendBaseUrl.isEmpty) {
       return const _BpmBatchFetchResult(items: <String, double?>{});
     }
     if (!await _ensureValidAccessToken()) {
@@ -975,7 +996,11 @@ class SpotifyAuthController extends ChangeNotifier {
     }
 
     final bpmById = <String, double?>{};
-    for (var offset = 0; offset < spotifyIds.length; offset += _bpmBatchChunkSize) {
+    for (
+      var offset = 0;
+      offset < spotifyIds.length;
+      offset += _bpmBatchChunkSize
+    ) {
       final end = min(offset + _bpmBatchChunkSize, spotifyIds.length);
       final chunk = spotifyIds.sublist(offset, end);
       final chunkResult = await _fetchTrackBpmsChunk(chunk);
@@ -1061,7 +1086,10 @@ class SpotifyAuthController extends ChangeNotifier {
       final request = await client
           .getUrl(Uri.parse(url))
           .timeout(_spotifyRequestTimeout);
-      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_accessToken');
+      request.headers.set(
+        HttpHeaders.authorizationHeader,
+        'Bearer $_accessToken',
+      );
       final response = await request.close().timeout(_spotifyRequestTimeout);
       final payload = await response
           .transform(utf8.decoder)
@@ -1178,9 +1206,21 @@ class SpotifyAuthController extends ChangeNotifier {
     return null;
   }
 
+  String _baseGeneratedPlaylistTitle(String title) {
+    return title
+        .replaceFirst(
+          RegExp(r'\s+\d{2,3}\s*-\s*\d{2,3}\s*bpm$', caseSensitive: false),
+          '',
+        )
+        .replaceFirst(RegExp(r'\s+\d{2,3}\s*bpm$', caseSensitive: false), '')
+        .trim();
+  }
+
   SpotifyUserProfile _parseProfile(Map<String, dynamic> json) {
     final images = json['images'] as List<dynamic>? ?? const [];
-    final firstImage = images.isNotEmpty ? images.first as Map<String, dynamic>? : null;
+    final firstImage = images.isNotEmpty
+        ? images.first as Map<String, dynamic>?
+        : null;
     return SpotifyUserProfile(
       id: json['id'] as String? ?? 'spotify-user',
       displayName:
@@ -1203,9 +1243,12 @@ class SpotifyAuthController extends ChangeNotifier {
           final index = entry.key;
           final item = entry.value;
           final images = item['images'] as List<dynamic>? ?? const [];
-          final firstImage = images.isNotEmpty ? images.first as Map<String, dynamic>? : null;
+          final firstImage = images.isNotEmpty
+              ? images.first as Map<String, dynamic>?
+              : null;
           final owner = item['owner'] as Map<String, dynamic>? ?? const {};
-          final subtitle = owner['display_name'] as String? ?? 'Spotify playlist';
+          final subtitle =
+              owner['display_name'] as String? ?? 'Spotify playlist';
           final tracks = item['tracks'] as Map<String, dynamic>? ?? const {};
 
           return spotifyPlaylistToTempoPlaylist(
@@ -1256,10 +1299,7 @@ class _ApiRequestException implements Exception {
 }
 
 class _BpmBatchFetchResult {
-  const _BpmBatchFetchResult({
-    required this.items,
-    this.timedOut = false,
-  });
+  const _BpmBatchFetchResult({required this.items, this.timedOut = false});
 
   final Map<String, double?> items;
   final bool timedOut;
@@ -1277,6 +1317,21 @@ class _SessionPlaylistCacheEntry {
   final DateTime createdAt;
 }
 
+class _BpmRange {
+  const _BpmRange({required this.min, required this.max});
+
+  final int min;
+  final int max;
+
+  @override
+  bool operator ==(Object other) {
+    return other is _BpmRange && other.min == min && other.max == max;
+  }
+
+  @override
+  int get hashCode => Object.hash(min, max);
+}
+
 class _ExistingPlaylistMatch {
   const _ExistingPlaylistMatch({
     required this.playlistId,
@@ -1288,10 +1343,7 @@ class _ExistingPlaylistMatch {
 }
 
 class _PlaylistTracksPage {
-  const _PlaylistTracksPage({
-    required this.tracks,
-    required this.nextUrl,
-  });
+  const _PlaylistTracksPage({required this.tracks, required this.nextUrl});
 
   final List<SpotifyTrack> tracks;
   final String? nextUrl;
