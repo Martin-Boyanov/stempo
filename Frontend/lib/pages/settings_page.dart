@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import '../state/auth_providers.dart';
 import '../ui/theme/app_fx.dart';
 import '../ui/theme/colors.dart';
-import '../pages/playlist_page.dart'; // For AtmosphereBackground and RoundIconButton if exported, but I'll redefine or use global ones
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -144,7 +144,7 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-class _BpmSettingsCard extends StatelessWidget {
+class _BpmSettingsCard extends StatefulWidget {
   const _BpmSettingsCard({
     required this.currentBpm,
     required this.currentTolerance,
@@ -156,6 +156,45 @@ class _BpmSettingsCard extends StatelessWidget {
   final int currentTolerance;
   final ValueChanged<int> onBpmChanged;
   final ValueChanged<int> onToleranceChanged;
+
+  @override
+  State<_BpmSettingsCard> createState() => _BpmSettingsCardState();
+}
+
+class _BpmSettingsCardState extends State<_BpmSettingsCard> {
+  late final TextEditingController _bpmController;
+  late final FocusNode _bpmFocusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _bpmController = TextEditingController(text: widget.currentBpm.toString());
+    _bpmFocusNode = FocusNode();
+  }
+
+  @override
+  void didUpdateWidget(covariant _BpmSettingsCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_bpmFocusNode.hasFocus && widget.currentBpm != oldWidget.currentBpm) {
+      _bpmController.text = widget.currentBpm.toString();
+    }
+  }
+
+  @override
+  void dispose() {
+    _bpmController.dispose();
+    _bpmFocusNode.dispose();
+    super.dispose();
+  }
+
+  void _commitTypedBpm() {
+    final parsed = int.tryParse(_bpmController.text.trim());
+    final normalized = (parsed ?? widget.currentBpm).clamp(80, 165);
+    if (normalized != widget.currentBpm) {
+      widget.onBpmChanged(normalized);
+    }
+    _bpmController.text = normalized.toString();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -202,7 +241,7 @@ class _BpmSettingsCard extends StatelessWidget {
                         text: TextSpan(
                           children: [
                             TextSpan(
-                              text: '$currentBpm',
+                              text: '${widget.currentBpm}',
                               style: const TextStyle(
                                 color: AppColors.primaryBright,
                                 fontSize: 22,
@@ -222,6 +261,55 @@ class _BpmSettingsCard extends StatelessWidget {
                       ),
                     ),
                   ),
+                  const SizedBox(width: 12),
+                  SizedBox(
+                    width: 72,
+                    child: TextField(
+                      controller: _bpmController,
+                      focusNode: _bpmFocusNode,
+                      keyboardType: TextInputType.number,
+                      textInputAction: TextInputAction.done,
+                      textAlign: TextAlign.center,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                        LengthLimitingTextInputFormatter(3),
+                      ],
+                      onSubmitted: (_) => _commitTypedBpm(),
+                      onTapOutside: (_) => _commitTypedBpm(),
+                      decoration: InputDecoration(
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 12,
+                        ),
+                        filled: true,
+                        fillColor: Colors.white.withValues(alpha: 0.04),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide(
+                            color: Colors.white.withValues(alpha: 0.08),
+                          ),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide(
+                            color: Colors.white.withValues(alpha: 0.08),
+                          ),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(
+                            color: AppColors.primaryBright,
+                          ),
+                        ),
+                      ),
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 12),
@@ -233,13 +321,16 @@ class _BpmSettingsCard extends StatelessWidget {
                   ),
                 ),
                 child: Slider(
-                  value: currentBpm.toDouble(),
+                  value: widget.currentBpm.toDouble(),
                   min: 80,
                   max: 165,
                   divisions: 85,
                   activeColor: AppColors.primaryBright,
                   inactiveColor: Colors.white.withValues(alpha: 0.08),
-                  onChanged: (val) => onBpmChanged(val.round()),
+                  onChanged: (val) {
+                    widget.onBpmChanged(val.round());
+                    _bpmController.text = val.round().toString();
+                  },
                 ),
               ),
               const SizedBox(height: 20),
@@ -248,7 +339,7 @@ class _BpmSettingsCard extends StatelessWidget {
                   Expanded(
                     child: _CompactStatPill(
                       label: 'Range Min',
-                      value: '${currentBpm - currentTolerance}',
+                      value: '${widget.currentBpm - widget.currentTolerance}',
                       accent: AppColors.accent,
                     ),
                   ),
@@ -256,7 +347,7 @@ class _BpmSettingsCard extends StatelessWidget {
                   Expanded(
                     child: _CompactStatPill(
                       label: 'Variance',
-                      value: '±$currentTolerance',
+                      value: '+/- ${widget.currentTolerance}',
                       accent: AppColors.warning,
                     ),
                   ),
@@ -264,7 +355,7 @@ class _BpmSettingsCard extends StatelessWidget {
                   Expanded(
                     child: _CompactStatPill(
                       label: 'Range Max',
-                      value: '${currentBpm + currentTolerance}',
+                      value: '${widget.currentBpm + widget.currentTolerance}',
                       accent: AppColors.cinemaRed,
                     ),
                   ),
@@ -296,11 +387,11 @@ class _BpmSettingsCard extends StatelessWidget {
                   thumbColor: AppColors.accent,
                 ),
                 child: Slider(
-                  value: currentTolerance.toDouble(),
+                  value: widget.currentTolerance.toDouble(),
                   min: 2,
                   max: 20,
                   divisions: 18,
-                  onChanged: (val) => onToleranceChanged(val.round()),
+                  onChanged: (val) => widget.onToleranceChanged(val.round()),
                   inactiveColor: Colors.white.withValues(alpha: 0.08),
                 ),
               ),

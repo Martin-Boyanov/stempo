@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../state/spotify_models.dart';
 import '../state/playlist_models.dart';
 import '../state/auth_providers.dart';
+import '../state/bpm_matching.dart';
 import '../ui/theme/app_fx.dart';
 import '../ui/theme/colors.dart';
 import '../ui/widgets/media_cover.dart';
@@ -426,9 +427,11 @@ class _SearchPageState extends State<SearchPage> {
               ? widget.paceRange
               : _paceRange;
           final paceMatch = switch (item.bpm) {
-            final bpm? =>
-              bpm >= activePaceRange.start.round() &&
-                  bpm <= activePaceRange.end.round(),
+            final bpm? => bpmMatchesWindow(
+              bpm,
+              minBpm: activePaceRange.start.round(),
+              maxBpm: activePaceRange.end.round(),
+            ),
             null => query.isNotEmpty,
           };
           if (!queryMatch || !useCaseMatch || !moodMatch || !durationMatch) {
@@ -465,16 +468,26 @@ class _SearchPageState extends State<SearchPage> {
     }
   }
 
-  int _fitDelta(_SearchItem item) =>
-      item.bpm == null ? 999 : (item.bpm! - widget.targetBpm).abs();
+  int _fitDelta(_SearchItem item) => item.bpm == null
+      ? 999
+      : bpmFitDelta(
+          item.bpm!,
+          minBpm: widget.paceRange.start.round(),
+          maxBpm: widget.paceRange.end.round(),
+          targetBpm: widget.targetBpm,
+        );
 
   String _fitLabel(_SearchItem item) {
     if (item.bpm == null) return 'Artist pick';
-    final delta = item.bpm! - widget.targetBpm;
-    final absolute = delta.abs();
+    final absolute = bpmFitDelta(
+      item.bpm!,
+      minBpm: widget.paceRange.start.round(),
+      maxBpm: widget.paceRange.end.round(),
+      targetBpm: widget.targetBpm,
+    );
     if (absolute <= 2) return 'Perfect fit';
     if (absolute <= 5) return 'Good match';
-    return delta > 0 ? '+$absolute BPM' : '-$absolute BPM';
+    return '$absolute BPM away';
   }
 
   void _clearSearchQuery() {
@@ -1007,8 +1020,11 @@ class _SearchPageState extends State<SearchPage> {
           (item) =>
               item.type != SearchResultType.artist &&
               item.bpm != null &&
-              item.bpm! >= widget.paceRange.start.round() - 4 &&
-              item.bpm! <= widget.paceRange.end.round() + 4,
+              bpmMatchesWindow(
+                item.bpm!,
+                minBpm: widget.paceRange.start.round() - 4,
+                maxBpm: widget.paceRange.end.round() + 4,
+              ),
         )
         .take(3)
         .toList(growable: false);

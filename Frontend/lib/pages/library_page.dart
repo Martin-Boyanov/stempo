@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../state/auth_providers.dart';
+import '../state/bpm_matching.dart';
 import '../state/playlist_models.dart';
 import '../ui/theme/app_fx.dart';
 import '../ui/theme/colors.dart';
@@ -163,8 +165,13 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   int _fitRating(TempoPlaylist playlist) {
-    final difference = (_effectivePlaylistBpm(playlist) - widget.userCadence)
-        .abs();
+    final tolerance = AuthScope.read(context).bpmTolerance;
+    final difference = bpmFitDelta(
+      _effectivePlaylistBpm(playlist),
+      minBpm: widget.userCadence - tolerance,
+      maxBpm: widget.userCadence + tolerance,
+      targetBpm: widget.userCadence,
+    );
     if (difference <= 3) return 0;
     if (difference <= 8) return 1;
     return 2;

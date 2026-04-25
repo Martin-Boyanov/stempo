@@ -139,17 +139,35 @@ class _PlaylistPageState extends State<PlaylistPage> {
   }
 
   Future<void> _loadTracks({bool forceRefresh = false}) {
+    if (_isGeneratedBpmPlaylist) {
+      return AuthScope.read(context).loadTracksForPlaylist(
+        widget.args.playlist.id,
+        forceRefresh: forceRefresh,
+      );
+    }
+    final range = _effectiveBpmRange;
     return AuthScope.read(context).loadTracksForPlaylist(
       widget.args.playlist.id,
       targetBpm: _targetBpm,
+      minBpm: range.min,
+      maxBpm: range.max,
       forceRefresh: forceRefresh,
     );
   }
 
   Future<void> _loadMoreTracks() {
-    return AuthScope.read(
-      context,
-    ).loadMoreTracksForPlaylist(widget.args.playlist.id, targetBpm: _targetBpm);
+    if (_isGeneratedBpmPlaylist) {
+      return AuthScope.read(
+        context,
+      ).loadMoreTracksForPlaylist(widget.args.playlist.id);
+    }
+    final range = _effectiveBpmRange;
+    return AuthScope.read(context).loadMoreTracksForPlaylist(
+      widget.args.playlist.id,
+      targetBpm: _targetBpm,
+      minBpm: range.min,
+      maxBpm: range.max,
+    );
   }
 
   Future<void> _refreshTracks() => _loadTracks(forceRefresh: true);
@@ -213,9 +231,83 @@ class _PlaylistPageState extends State<PlaylistPage> {
 
     try {
       final auth = AuthScope.read(context);
+      if (_isGeneratedBpmPlaylist) {
+        await auth.ensureAllTracksLoadedForPlaylist(widget.args.playlist.id);
+        final tracks = auth.tracksForPlaylist(widget.args.playlist.id);
+        final fallbackTrackUri = tracks.isNotEmpty
+            ? tracks.first.spotifyUri
+            : '';
+        final fallbackUri =
+            startTrack?.spotifyUri ??
+            (fallbackTrackUri.isNotEmpty ? fallbackTrackUri : null) ??
+            widget.args.playlist.spotifyUri ??
+            '';
+        bool opened = false;
+        final playlistUri = widget.args.playlist.spotifyUri;
+        if (playlistUri != null &&
+            playlistUri.isNotEmpty &&
+            startTrack != null &&
+            startTrack.spotifyUri.isNotEmpty) {
+          opened = await auth.startPlaylistPlaybackAtTrack(
+            playlistUri: playlistUri,
+            trackUri: startTrack.spotifyUri,
+          );
+        }
+        if (!opened) {
+          opened = playlistUri != null && playlistUri.isNotEmpty
+              ? await _openInAppOrRemote(playlistUri)
+              : (fallbackUri.isNotEmpty
+                    ? await _openInAppOrRemote(fallbackUri)
+                    : false);
+        }
+        if (!opened && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Could not open this playlist yet.')),
+          );
+        }
+        if (!mounted || !opened) return;
+        final displayTrack =
+            startTrack ??
+            tracks.firstWhere(
+              (track) => track.spotifyUri.isNotEmpty,
+              orElse: () => tracks.isNotEmpty
+                  ? tracks.first
+                  : const SpotifyTrack(
+                      id: '',
+                      title: '',
+                      artistLine: '',
+                      imageUrl: '',
+                      spotifyUri: '',
+                      durationMs: 0,
+                      bpm: 0,
+                    ),
+            );
+        context.push(
+          '/now-playing',
+          extra: NowPlayingPageArgs(
+            trackTitle: displayTrack.title,
+            trackArtist: displayTrack.artistLine,
+            trackImageAsset: displayTrack.imageUrl.isNotEmpty
+                ? displayTrack.imageUrl
+                : widget.args.playlist.imageAsset,
+            trackBpm: 0,
+            userCadence: auth.userCadence,
+            spotifyUri: playlistUri ?? displayTrack.spotifyUri,
+            allowedTrackUris: tracks
+                .map((track) => track.spotifyUri)
+                .where((uri) => uri.isNotEmpty)
+                .toList(growable: false),
+            trackBpmsByUri: const <String, int>{},
+          ),
+        );
+        return;
+      }
+      final range = _effectiveBpmRange;
       await auth.ensureAllTracksLoadedForPlaylist(
         widget.args.playlist.id,
         targetBpm: _targetBpm,
+        minBpm: range.min,
+        maxBpm: range.max,
       );
       final tracks = auth.tracksForPlaylist(widget.args.playlist.id);
 
@@ -230,7 +322,6 @@ class _PlaylistPageState extends State<PlaylistPage> {
         return;
       }
 
-      final range = _effectiveBpmRange;
       final sessionPlaylistUri = await auth.ensureSessionPlaylistForBpm(
         sourcePlaylist: widget.args.playlist,
         tracks: tracks,

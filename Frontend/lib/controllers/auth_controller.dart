@@ -9,6 +9,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../state/bpm_matching.dart';
 import '../state/playlist_models.dart';
 import '../state/spotify_models.dart';
 
@@ -937,10 +938,9 @@ class SpotifyAuthController extends ChangeNotifier {
     _debugTrackLoad(
       'session_playlist_replace_chunk playlistId=$playlistId count=${firstChunk.length}',
     );
-    await _putJson(
-      'https://api.spotify.com/v1/playlists/$playlistId/tracks',
-      {'uris': firstChunk},
-    );
+    await _putJson('https://api.spotify.com/v1/playlists/$playlistId/tracks', {
+      'uris': firstChunk,
+    });
 
     const chunkSize = 100;
     for (var offset = 100; offset < uris.length; offset += chunkSize) {
@@ -1057,7 +1057,8 @@ class SpotifyAuthController extends ChangeNotifier {
     final resolvedTracks = tracks
         .map((track) {
           final bpm = bpmFetchResult.items[track.id];
-          if (bpm == null || bpm < minBpm || bpm > maxBpm) {
+          if (bpm == null ||
+              !bpmMatchesWindow(bpm.round(), minBpm: minBpm, maxBpm: maxBpm)) {
             return null;
           }
           return SpotifyTrack(

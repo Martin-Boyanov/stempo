@@ -6,6 +6,7 @@ import 'package:palette_generator/palette_generator.dart';
 
 import '../controllers/spotify_remote_service.dart';
 import '../state/auth_providers.dart';
+import '../state/bpm_matching.dart';
 import '../ui/theme/app_fx.dart';
 import '../ui/theme/colors.dart';
 import '../ui/widgets/media_cover.dart';
@@ -91,8 +92,9 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     _allowedTrackUrisOrdered = widget.args.allowedTrackUris;
     _allowedTrackUris = widget.args.allowedTrackUris.toSet();
     _trackBpmsByUri = Map<String, int>.from(widget.args.trackBpmsByUri);
-    _usesSpotifyPlaylistContext =
-        (widget.args.spotifyUri ?? '').startsWith('spotify:playlist:');
+    _usesSpotifyPlaylistContext = (widget.args.spotifyUri ?? '').startsWith(
+      'spotify:playlist:',
+    );
     final initialTrackUri = widget.args.spotifyUri ?? '';
     final initialIndex = _allowedTrackUrisOrdered.indexOf(initialTrackUri);
     _currentAllowedIndex = initialIndex >= 0 ? initialIndex : 0;
@@ -195,8 +197,12 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
       return;
     }
 
-    final resolvedBpm = await AuthScope.read(context).resolveTrackBpm(trimmedUri);
-    if (!mounted || _currentTrackUri != trimmedUri || resolvedBpm == null) return;
+    final resolvedBpm = await AuthScope.read(
+      context,
+    ).resolveTrackBpm(trimmedUri);
+    if (!mounted || _currentTrackUri != trimmedUri || resolvedBpm == null) {
+      return;
+    }
     _trackBpmsByUri[trimmedUri] = resolvedBpm;
     _setStateSafely(() => _trackBpm = resolvedBpm);
   }
@@ -239,8 +245,8 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
 
     if (state.isPaused || state.durationMs <= 0 || _isAutoAdvancing) return;
     const nearEndThresholdMs = 1500;
-    final isNearEnd = (state.durationMs - state.playbackPositionMs) <=
-        nearEndThresholdMs;
+    final isNearEnd =
+        (state.durationMs - state.playbackPositionMs) <= nearEndThresholdMs;
     if (!isNearEnd) return;
     if (_lastAutoAdvancedSourceUri == currentTrackUri) return;
 
@@ -295,7 +301,9 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
       }
       if (_allowedTrackUrisOrdered.isNotEmpty) {
         final currentIndex = _allowedTrackUrisOrdered.indexOf(_currentTrackUri);
-        final resolvedIndex = currentIndex >= 0 ? currentIndex : _currentAllowedIndex;
+        final resolvedIndex = currentIndex >= 0
+            ? currentIndex
+            : _currentAllowedIndex;
         final nextIndex = (resolvedIndex + 1) % _allowedTrackUrisOrdered.length;
         final targetUri = _allowedTrackUrisOrdered[nextIndex];
         await _playAllowedUri(targetUri, trackIndex: nextIndex);
@@ -313,7 +321,9 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
       }
       if (_allowedTrackUrisOrdered.isNotEmpty) {
         final currentIndex = _allowedTrackUrisOrdered.indexOf(_currentTrackUri);
-        final resolvedIndex = currentIndex >= 0 ? currentIndex : _currentAllowedIndex;
+        final resolvedIndex = currentIndex >= 0
+            ? currentIndex
+            : _currentAllowedIndex;
         final prevIndex = resolvedIndex <= 0
             ? _allowedTrackUrisOrdered.length - 1
             : resolvedIndex - 1;
@@ -334,7 +344,8 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
       if (played) {
         _setStateSafely(() {
           _currentTrackUri = targetUri;
-          final resolvedIndex = trackIndex ?? _allowedTrackUrisOrdered.indexOf(targetUri);
+          final resolvedIndex =
+              trackIndex ?? _allowedTrackUrisOrdered.indexOf(targetUri);
           if (resolvedIndex >= 0) {
             _currentAllowedIndex = resolvedIndex;
           }
@@ -413,16 +424,18 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
         maximumColorCount: 20,
       );
       if (!mounted) return;
-      
-      // Prioritize vibrant swatches for the "glow" effect
-      final mainColor = palette.vibrantColor?.color ?? 
-                       palette.lightVibrantColor?.color ?? 
-                       palette.dominantColor?.color ?? 
-                       AppColors.primary;
 
-      final sideColor = palette.mutedColor?.color ?? 
-                       palette.darkVibrantColor?.color ?? 
-                       AppColors.cinemaRed;
+      // Prioritize vibrant swatches for the "glow" effect
+      final mainColor =
+          palette.vibrantColor?.color ??
+          palette.lightVibrantColor?.color ??
+          palette.dominantColor?.color ??
+          AppColors.primary;
+
+      final sideColor =
+          palette.mutedColor?.color ??
+          palette.darkVibrantColor?.color ??
+          AppColors.cinemaRed;
 
       setState(() {
         _accentColor = _ensureVisible(mainColor);
@@ -433,15 +446,32 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
 
   int get _cadenceGap => (_trackBpm - widget.args.userCadence).abs();
 
+  int get _harmonicGap => bpmFitDelta(
+    _trackBpm,
+    minBpm: widget.args.userCadence - 2,
+    maxBpm: widget.args.userCadence + 2,
+    targetBpm: widget.args.userCadence,
+  );
+
+  bool get _isHalfTimeMatch =>
+      _trackBpm > 0 && (widget.args.userCadence - (_trackBpm * 2)).abs() <= 2;
+
+  bool get _isDoubleTimeMatch =>
+      _trackBpm > 0 && (_trackBpm - (widget.args.userCadence * 2)).abs() <= 2;
+
   String get _matchLabel {
     if (_cadenceGap <= 2) return 'Perfect fit';
-    if (_cadenceGap <= 6) return 'Close';
+    if (_isHalfTimeMatch) return 'Half-time';
+    if (_isDoubleTimeMatch) return 'Double-time';
+    if (_harmonicGap <= 6) return 'Close';
     return 'Off pace';
   }
 
   Color get _matchColor {
-    if (_cadenceGap <= 2) return AppColors.primaryBright;
-    if (_cadenceGap <= 6) return AppColors.warning;
+    if (_cadenceGap <= 2 || _isHalfTimeMatch || _isDoubleTimeMatch) {
+      return AppColors.primaryBright;
+    }
+    if (_harmonicGap <= 6) return AppColors.warning;
     return AppColors.textMuted;
   }
 
@@ -449,10 +479,16 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     if (_cadenceGap <= 2) {
       return 'This track is almost exactly on your rhythm. Great pick to sync with.';
     }
-    if (_cadenceGap <= 6) {
+    if (_isHalfTimeMatch) {
+      return 'This track lands at half-time against your cadence, so it can still feel locked in on alternating steps.';
+    }
+    if (_isDoubleTimeMatch) {
+      return 'This track lands at double-time against your cadence, so it can still feel locked in with quicker foot strikes.';
+    }
+    if (_harmonicGap <= 6) {
       return 'This one is close enough to feel natural, with only a small pace adjustment.';
     }
-    return 'The song is drifting from your target cadence, so it is better for casual listening than a synced run.';
+    return 'This one is better for listening than trying to match to synced steps.';
   }
 
   @override
@@ -507,7 +543,8 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                   const SizedBox(height: 28),
                   _ArtworkHero(
                     trackTitle: _trackTitle,
-                    trackImageAsset: _actualImage ?? widget.args.trackImageAsset,
+                    trackImageAsset:
+                        _actualImage ?? widget.args.trackImageAsset,
                     trackBpm: _trackBpm,
                     glowColor: _accentColor,
                   ),
@@ -585,7 +622,11 @@ class _TopActionButton extends StatelessWidget {
         height: 46,
         decoration: AppFx.glassDecoration(
           radius: 18,
-          glowColor: (context.findAncestorStateOfType<_NowPlayingPageState>()?._accentColor) ?? AppColors.cinemaRed,
+          glowColor:
+              (context
+                  .findAncestorStateOfType<_NowPlayingPageState>()
+                  ?._accentColor) ??
+              AppColors.cinemaRed,
         ),
         child: Icon(icon, color: AppColors.textPrimary, size: 24),
       ),
@@ -692,7 +733,7 @@ class _ProgressCard extends StatelessWidget {
         children: [
           Row(
             children: [
-               Container(
+              Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 14,
                   vertical: 6,
@@ -700,14 +741,18 @@ class _ProgressCard extends StatelessWidget {
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: [
-                      HSLColor.fromColor(glowColor ?? AppColors.primary).withLightness(0.6).toColor(),
+                      HSLColor.fromColor(
+                        glowColor ?? AppColors.primary,
+                      ).withLightness(0.6).toColor(),
                       glowColor ?? AppColors.primary,
                     ],
                   ),
                   borderRadius: BorderRadius.circular(999),
                   boxShadow: [
                     BoxShadow(
-                      color: (glowColor ?? AppColors.primary).withValues(alpha: 0.2),
+                      color: (glowColor ?? AppColors.primary).withValues(
+                        alpha: 0.2,
+                      ),
                       blurRadius: 8,
                       offset: const Offset(0, 2),
                     ),
@@ -716,7 +761,11 @@ class _ProgressCard extends StatelessWidget {
                 child: Text(
                   matchLabel.toUpperCase(),
                   style: TextStyle(
-                    color: (glowColor ?? AppColors.primary).computeLuminance() > 0.6 ? Colors.black : Colors.white,
+                    color:
+                        (glowColor ?? AppColors.primary).computeLuminance() >
+                            0.6
+                        ? Colors.black
+                        : Colors.white,
                     fontSize: 10,
                     letterSpacing: 1.1,
                     fontWeight: FontWeight.w900,
@@ -739,7 +788,7 @@ class _ProgressCard extends StatelessWidget {
             children: [
               Expanded(
                 child: _StatBlock(
-                  label: 'Track BPM', 
+                  label: 'Track BPM',
                   value: '$trackBpm',
                   glowColor: glowColor,
                 ),
@@ -747,7 +796,7 @@ class _ProgressCard extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: _StatBlock(
-                  label: 'Your cadence', 
+                  label: 'Your cadence',
                   value: '$userCadence',
                   glowColor: glowColor,
                 ),
@@ -771,11 +820,7 @@ class _ProgressCard extends StatelessWidget {
 }
 
 class _StatBlock extends StatelessWidget {
-  const _StatBlock({
-    required this.label, 
-    required this.value,
-    this.glowColor,
-  });
+  const _StatBlock({required this.label, required this.value, this.glowColor});
 
   final String label;
   final String value;
@@ -844,7 +889,10 @@ class _PlaybackTimeline extends StatelessWidget {
             overlayColor: AppColors.primary.withValues(alpha: 0.2),
           ),
           child: Slider(
-            value: playbackPositionMs.toDouble().clamp(0, durationMs.toDouble()),
+            value: playbackPositionMs.toDouble().clamp(
+              0,
+              durationMs.toDouble(),
+            ),
             min: 0,
             max: durationMs.toDouble(),
             onChanged: onChanged,
@@ -939,9 +987,7 @@ class _PlaybackControls extends StatelessWidget {
         GestureDetector(
           onTap: onToggleRepeat,
           child: Icon(
-            repeatMode == 1
-                ? Icons.repeat_one_rounded
-                : Icons.repeat_rounded,
+            repeatMode == 1 ? Icons.repeat_one_rounded : Icons.repeat_rounded,
             color: repeatMode > 0 ? accentColor : AppColors.textSecondary,
             size: 24,
           ),
@@ -992,8 +1038,6 @@ class _PlayPauseButton extends StatelessWidget {
     );
   }
 }
-
-
 
 String _formatTime(int durationMs) {
   final totalSeconds = (durationMs / 1000).floor().clamp(0, 59999);

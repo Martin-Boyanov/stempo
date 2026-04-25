@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:pedometer/pedometer.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -19,7 +19,6 @@ import '../ui/widgets/loader.dart';
 import '../ui/widgets/media_cover.dart';
 import '../ui/widgets/now_playing_bar.dart';
 import 'library_page.dart';
-import 'now_playing_page.dart';
 import 'playlist_page.dart';
 import 'search_page.dart';
 
@@ -63,6 +62,12 @@ class _HomePageState extends State<HomePage>
   StreamSubscription<StepCount>? _stepSubscription;
   int? _initialPedometerCount;
   int _liveAddedSteps = 0;
+  bool _isTrackingCadence = false;
+  bool _isTrackerClosing = false;
+  int _trackedSteps = 0;
+  int _trackingSecondsRemaining = 20;
+  int? _trackingInitialStepCount;
+  Timer? _trackingTimer;
 
   int _syncGap(int userCadence) {
     final trackBpm = _currentTrackBpm ?? _mockState.trackBpm;
@@ -210,6 +215,193 @@ class _HomePageState extends State<HomePage>
     }
   }
 
+  Future<void> _startStepBasedBpmTracking() async {
+    if (_isTrackingCadence) return;
+
+    var granted = _hasStepPermission;
+    if (!granted) {
+      granted = await _stepService.requestPermissions();
+      if (!mounted) return;
+    }
+
+    final activityStatus = await Permission.activityRecognition.status;
+    if (!mounted) return;
+    if (!granted || activityStatus != PermissionStatus.granted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Step access is needed to track BPM automatically.'),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _hasStepPermission = true;
+      _isTrackingCadence = true;
+      _isTrackerClosing = false;
+      _trackedSteps = 0;
+      _trackingSecondsRemaining = 20;
+      _trackingInitialStepCount = null;
+    });
+
+    _trackingTimer?.cancel();
+    _trackingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted || !_isTrackingCadence) {
+        timer.cancel();
+        return;
+      }
+
+      if (_trackingSecondsRemaining <= 1) {
+        timer.cancel();
+        _finishStepBasedBpmTracking();
+        return;
+      }
+
+      setState(() {
+        _trackingSecondsRemaining -= 1;
+      });
+    });
+  }
+
+  Future<void> _handleTrackingClosePressed() async {
+    if (_isTrackerClosing || !_isTrackingCadence) return;
+    _isTrackerClosing = true;
+    final shouldExit = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF151B18),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+          ),
+          title: const Text(
+            'Exit tracking?',
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          content: const Text(
+            'If you exit now, we will not set your steps per minute automatically.',
+            style: TextStyle(color: AppColors.textSecondary, height: 1.4),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text(
+                'Keep tracking',
+                style: TextStyle(color: AppColors.textSecondary),
+              ),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.cinemaRed,
+                foregroundColor: AppColors.textPrimary,
+              ),
+              child: const Text('Exit'),
+            ),
+          ],
+        );
+      },
+    );
+    _isTrackerClosing = false;
+    if (!mounted || shouldExit != true) return;
+    _cancelStepBasedBpmTracking();
+  }
+
+  void _cancelStepBasedBpmTracking() {
+    _trackingTimer?.cancel();
+    if (!mounted) return;
+    setState(() {
+      _isTrackingCadence = false;
+      _trackedSteps = 0;
+      _trackingSecondsRemaining = 20;
+      _trackingInitialStepCount = null;
+    });
+  }
+
+  void _finishStepBasedBpmTracking() {
+    if (_trackedSteps <= 0) {
+      if (!mounted) return;
+      setState(() {
+        _isTrackingCadence = false;
+        _trackingInitialStepCount = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No steps were detected, so BPM was not changed.'),
+        ),
+      );
+      return;
+    }
+
+    final targetBpm = _trackedSteps * 3;
+    AuthScope.read(context).userCadence = targetBpm;
+
+    if (!mounted) return;
+    setState(() {
+      _isTrackingCadence = false;
+      _trackingInitialStepCount = null;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Target BPM set to $targetBpm from $_trackedSteps steps.',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmExitApp() async {
+    final shouldExit = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF151B18),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+          ),
+          title: const Text(
+            'Exit app?',
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          content: const Text(
+            'Do you want to leave stempo?',
+            style: TextStyle(color: AppColors.textSecondary, height: 1.4),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text(
+                'Stay',
+                style: TextStyle(color: AppColors.textSecondary),
+              ),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.cinemaRed,
+                foregroundColor: AppColors.textPrimary,
+              ),
+              child: const Text('Exit'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldExit == true) {
+      await SystemNavigator.pop();
+    }
+  }
+
   StreamSubscription<SpotifyRemotePlayerState>? _playerSubscription;
   SpotifyRemotePlayerState? _playerState;
 
@@ -307,6 +499,13 @@ class _HomePageState extends State<HomePage>
         setState(() {
           _liveAddedSteps = event.steps - _initialPedometerCount!;
           debugPrint('PEDOMETER LIVE ADDED: $_liveAddedSteps');
+          if (_isTrackingCadence) {
+            _trackingInitialStepCount ??= event.steps;
+            _trackedSteps = math.max(
+              0,
+              event.steps - _trackingInitialStepCount!,
+            );
+          }
         });
       },
       onError: (error) {
@@ -317,6 +516,7 @@ class _HomePageState extends State<HomePage>
 
   @override
   void dispose() {
+    _trackingTimer?.cancel();
     _stepSubscription?.cancel();
     _playerSubscription?.cancel();
     _pulseController.dispose();
@@ -372,62 +572,88 @@ class _HomePageState extends State<HomePage>
       );
     }
 
-    return Scaffold(
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          const Positioned.fill(
-            child: AtmosphereBackground(
-              accent: AppColors.primary,
-              secondaryAccent: AppColors.cinemaRed,
-              child: SizedBox.expand(),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        if (_isTrackingCadence) {
+          await _handleTrackingClosePressed();
+          return;
+        }
+        if (_selectedTab != 0) {
+          setState(() => _selectedTab = 0);
+          return;
+        }
+        await _confirmExitApp();
+      },
+      child: Scaffold(
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            const Positioned.fill(
+              child: AtmosphereBackground(
+                accent: AppColors.primary,
+                secondaryAccent: AppColors.cinemaRed,
+                child: SizedBox.expand(),
+              ),
             ),
-          ),
-          SafeArea(
-            bottom: false,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 320),
-                  child: _buildSelectedTabBody(auth),
-                ),
-                Positioned(
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if ((_playerState?.trackUri.isNotEmpty ?? false) &&
-                          (_playerState?.trackName.isNotEmpty ?? false)) ...[
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          child: StempoNowPlayingBar(
-                            initialTrackTitle: _playerState?.trackName ?? '',
-                            initialTrackArtist: _playerState?.artistName ?? '',
-                            initialTrackImageAsset:
-                                _playerState?.resolvedImageUrl ?? '',
-                            initialTrackBpm:
-                                _currentTrackBpm ?? _mockState.trackBpm,
-                            userCadence: auth.userCadence,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                      ],
-                      _BottomNav(
-                        items: _tabs,
-                        selectedIndex: _selectedTab,
-                        onSelected: (index) =>
-                            setState(() => _selectedTab = index),
-                      ),
-                    ],
+            SafeArea(
+              bottom: false,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 320),
+                    child: _buildSelectedTabBody(auth),
                   ),
-                ),
-              ],
+                  if (_isTrackingCadence)
+                    Positioned.fill(
+                      child: _StepBpmTrackingOverlay(
+                        steps: _trackedSteps,
+                        secondsRemaining: _trackingSecondsRemaining,
+                        progress: (20 - _trackingSecondsRemaining) / 20,
+                        pulse: _pulseController,
+                        onClose: _handleTrackingClosePressed,
+                      ),
+                    ),
+                  Positioned(
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if ((_playerState?.trackUri.isNotEmpty ?? false) &&
+                            (_playerState?.trackName.isNotEmpty ?? false)) ...[
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            child: StempoNowPlayingBar(
+                              initialTrackTitle: _playerState?.trackName ?? '',
+                              initialTrackArtist:
+                                  _playerState?.artistName ?? '',
+                              initialTrackImageAsset:
+                                  _playerState?.resolvedImageUrl ?? '',
+                              initialTrackBpm:
+                                  _currentTrackBpm ?? _mockState.trackBpm,
+                              userCadence: auth.userCadence,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+                        _BottomNav(
+                          items: _tabs,
+                          selectedIndex: _selectedTab,
+                          onSelected: (index) =>
+                              setState(() => _selectedTab = index),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -450,6 +676,7 @@ class _HomePageState extends State<HomePage>
           recentPlaylists: playlists,
           onGoToLibrary: _goToLibraryTab,
           onChangeBpm: _openBpmPicker,
+          onTrackBpm: _startStepBasedBpmTracking,
           onOpenPlaylist: _openPlaylist,
           onRefreshPlaylists: _refreshPlaylistsFromSpotify,
         );
@@ -501,6 +728,7 @@ class _HomePageState extends State<HomePage>
           recentPlaylists: playlists,
           onGoToLibrary: _goToLibraryTab,
           onChangeBpm: _openBpmPicker,
+          onTrackBpm: _startStepBasedBpmTracking,
           onOpenPlaylist: _openPlaylist,
           onRefreshPlaylists: _refreshPlaylistsFromSpotify,
         );
@@ -520,6 +748,7 @@ class _HomeTabView extends StatelessWidget {
     required this.recentPlaylists,
     required this.onGoToLibrary,
     required this.onChangeBpm,
+    required this.onTrackBpm,
     required this.onOpenPlaylist,
     required this.onRefreshPlaylists,
   });
@@ -533,6 +762,7 @@ class _HomeTabView extends StatelessWidget {
   final List<TempoPlaylist> recentPlaylists;
   final VoidCallback onGoToLibrary;
   final VoidCallback onChangeBpm;
+  final VoidCallback onTrackBpm;
   final ValueChanged<TempoPlaylist> onOpenPlaylist;
   final VoidCallback onRefreshPlaylists;
 
@@ -636,6 +866,7 @@ class _HomeTabView extends StatelessWidget {
               syncGap: syncGap,
               onGoToLibrary: onGoToLibrary,
               onChangeBpm: onChangeBpm,
+              onTrackBpm: onTrackBpm,
             ),
           ],
         ),
@@ -917,7 +1148,8 @@ class _ModesResultsScreenState extends State<_ModesResultsScreen>
     final mode = widget.mode;
     final candidatePlaylists = widget.playlists
         .where(
-          (playlist) => (playlist.spotifyUri ?? '').startsWith('spotify:playlist:'),
+          (playlist) =>
+              (playlist.spotifyUri ?? '').startsWith('spotify:playlist:'),
         )
         .toList(growable: false);
     final cachedMode = _modeCache[_modeKey];
@@ -932,10 +1164,12 @@ class _ModesResultsScreenState extends State<_ModesResultsScreen>
     }
 
     if (candidatePlaylists.isNotEmpty &&
-        (cachedMode == null || (_isPreparingMode && _loadingModeKey == _modeKey))) {
+        (cachedMode == null ||
+            (_isPreparingMode && _loadingModeKey == _modeKey))) {
       return _ModeProgressLoadingScreen(
         title: mode.label,
-        subtitle: 'Complete the walk to unlock every playlist and track in ${mode.rangeLabel}.',
+        subtitle:
+            'Complete the walk to unlock every playlist and track in ${mode.rangeLabel}.',
         accent: mode.accent,
         secondaryAccent: AppColors.primary,
         progress: _modeLoadProgress,
@@ -1072,7 +1306,8 @@ class _ModesResultsScreenState extends State<_ModesResultsScreen>
                     track: filteredTracks[i],
                     accent: widget.mode.accent,
                     isLaunching: _isLaunchingTrack,
-                    onPlay: () => _playModeTrack(filteredTracks, filteredTracks[i]),
+                    onPlay: () =>
+                        _playModeTrack(filteredTracks, filteredTracks[i]),
                   ),
                   if (i != filteredTracks.length - 1)
                     const SizedBox(height: 10),
@@ -1149,9 +1384,12 @@ class _ModesResultsScreenState extends State<_ModesResultsScreen>
     for (final playlist in playlists) {
       final allTracks = auth.allTracksForPlaylist(playlist.id);
       if (allTracks.isEmpty) continue;
-      final playlistFullyEvaluated = !auth.hasMoreTracksForPlaylist(playlist.id);
+      final playlistFullyEvaluated = !auth.hasMoreTracksForPlaylist(
+        playlist.id,
+      );
       if (!playlistFullyEvaluated) continue;
-      final inRangeTracks = auth.tracksForPlaylist(playlist.id)
+      final inRangeTracks = auth
+          .tracksForPlaylist(playlist.id)
           .where((track) => widget.mode.matches(track.bpm))
           .toList(growable: false);
       final allTracksInRange =
@@ -1159,11 +1397,11 @@ class _ModesResultsScreenState extends State<_ModesResultsScreen>
       if (allTracksInRange) {
         final totalDurationMinutes =
             (inRangeTracks.fold<int>(
-                  0,
-                  (sum, track) => sum + track.durationMs,
-                ) /
-                60000)
-            .round();
+                      0,
+                      (sum, track) => sum + track.durationMs,
+                    ) /
+                    60000)
+                .round();
         resolvedPlaylists.add(
           TempoPlaylist(
             id: playlist.id,
@@ -1255,7 +1493,11 @@ class _ModesResultsScreenState extends State<_ModesResultsScreen>
         bpm: _averageBpm(spotifyTracks),
         trackCount: spotifyTracks.length,
         durationMinutes:
-            (spotifyTracks.fold<int>(0, (sum, track) => sum + track.durationMs) / 60000)
+            (spotifyTracks.fold<int>(
+                      0,
+                      (sum, track) => sum + track.durationMs,
+                    ) /
+                    60000)
                 .round(),
         category: 'Mode',
         mood: selectedTrack.mood,
@@ -1685,7 +1927,9 @@ class _ModeTrackCard extends StatelessWidget {
                 ],
               ),
               child: Icon(
-                isLaunching ? Icons.hourglass_top_rounded : Icons.play_arrow_rounded,
+                isLaunching
+                    ? Icons.hourglass_top_rounded
+                    : Icons.play_arrow_rounded,
                 color: Colors.black,
                 size: 24,
               ),
@@ -1799,1606 +2043,6 @@ const _modeOptions = [
     accent: AppColors.cinemaRed,
   ),
 ];
-
-class _StatsTabView extends StatefulWidget {
-  const _StatsTabView({required this.snapshot});
-
-  final _StatsSnapshot snapshot;
-
-  @override
-  State<_StatsTabView> createState() => _StatsTabViewState();
-}
-
-class _StatsTabViewState extends State<_StatsTabView> {
-  late final PageController _pageController;
-  int _pageIndex = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _pageController = PageController();
-  }
-
-  @override
-  void dispose() {
-    _pageController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _goToPage(int index) {
-    return _pageController.animateToPage(
-      index,
-      duration: const Duration(milliseconds: 520),
-      curve: Curves.easeInOutCubicEmphasized,
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        PageView(
-          controller: _pageController,
-          onPageChanged: (index) => setState(() => _pageIndex = index),
-          children: [
-            _StatsIntroScreen(
-              snapshot: widget.snapshot,
-              isActive: _pageIndex == 0,
-              onNext: () => _goToPage(1),
-            ),
-            _StatsFeatureScreen(
-              snapshot: widget.snapshot,
-              isActive: _pageIndex == 1,
-              title: 'Your pace has a signature',
-              eyebrow: 'Average BPM',
-              value: '${widget.snapshot.averageBpm}',
-              suffix: 'BPM',
-              accent: AppColors.primaryBright,
-              secondaryAccent: AppColors.primary,
-              chartValues: widget.snapshot.weeklyBpmTrend,
-              chartLabels: const ['W1', 'W2', 'W3', 'W4'],
-              onNext: () => _goToPage(2),
-            ),
-            _StatsSplitStoryScreen(
-              snapshot: widget.snapshot,
-              isActive: _pageIndex == 2,
-              onNext: () => _goToPage(3),
-            ),
-            _StatsSummaryScreen(snapshot: widget.snapshot),
-          ],
-        ),
-        Positioned(
-          left: 0,
-          right: 0,
-          bottom: 152,
-          child: IgnorePointer(
-            ignoring: _pageIndex == 3,
-            child: AnimatedOpacity(
-              duration: const Duration(milliseconds: 220),
-              opacity: _pageIndex == 3 ? 0 : 1,
-              child: Center(child: _StatsPagerDots(activeIndex: _pageIndex)),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _StatsSummaryScreen extends StatelessWidget {
-  const _StatsSummaryScreen({required this.snapshot});
-
-  final _StatsSnapshot snapshot;
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.only(bottom: 172),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _StatsHeader(snapshot: snapshot),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: _StatsHeroCard(
-                    eyebrow: 'Average BPM',
-                    value: '${snapshot.averageBpm}',
-                    suffix: 'BPM',
-                    insight: snapshot.averageBpmInsight,
-                    accent: AppColors.primaryBright,
-                    secondaryAccent: AppColors.primary,
-                    chartValues: snapshot.weeklyBpmTrend,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _StatsHeroCard(
-                    eyebrow: 'Favorite range',
-                    value: snapshot.favoriteRangeLabel,
-                    insight: snapshot.favoriteRangeInsight,
-                    accent: AppColors.cinemaRed,
-                    secondaryAccent: AppColors.cinemaRed,
-                    chartValues: snapshot.bpmZoneShares,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: _StatsMiniCard(
-                    label: 'Sync quality',
-                    value: '${snapshot.syncScore}%',
-                    caption: snapshot.syncInsight,
-                    accent: AppColors.primary,
-                    icon: Icons.graphic_eq_rounded,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _StatsMiniCard(
-                    label: 'Top playlist',
-                    value: snapshot.topPlaylistTitle,
-                    caption: snapshot.topPlaylistInsight,
-                    accent: AppColors.accent,
-                    icon: Icons.library_music_rounded,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _StatsMiniCard(
-                    label: 'Most-played mood',
-                    value: snapshot.topMood,
-                    caption: snapshot.moodInsight,
-                    accent: AppColors.warning,
-                    icon: Icons.favorite_rounded,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _StatsMiniCard(
-                    label: 'Avg session',
-                    value: '${snapshot.averageSessionMinutes} min',
-                    caption: snapshot.sessionInsight,
-                    accent: AppColors.primaryBright,
-                    icon: Icons.timer_rounded,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 18),
-            const _SectionLabel(title: 'Momentum', trailing: 'Last 30 days'),
-            const SizedBox(height: 12),
-            _StatsTrendCard(snapshot: snapshot),
-            const SizedBox(height: 12),
-            _StatsDonutCard(snapshot: snapshot, height: 228, compact: false),
-            const SizedBox(height: 18),
-            const _SectionLabel(
-              title: 'Interesting facts',
-              trailing: 'For you',
-            ),
-            const SizedBox(height: 12),
-            GridView.count(
-              shrinkWrap: true,
-              crossAxisCount: 2,
-              mainAxisSpacing: 12,
-              crossAxisSpacing: 12,
-              physics: const NeverScrollableScrollPhysics(),
-              childAspectRatio: 0.88,
-              children: [
-                for (final fact in snapshot.facts)
-                  _StatsFactCard(
-                    title: fact.title,
-                    value: fact.value,
-                    caption: fact.caption,
-                    accent: fact.accent,
-                    icon: fact.icon,
-                  ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _StatsHeader extends StatelessWidget {
-  const _StatsHeader({required this.snapshot});
-
-  final _StatsSnapshot snapshot;
-
-  @override
-  Widget build(BuildContext context) {
-    return FrostedPanel(
-      padding: const EdgeInsets.all(22),
-      radius: 30,
-      glowColor: AppColors.primary,
-      elevated: true,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Stats',
-                      style: Theme.of(context).textTheme.bodySmall!.copyWith(
-                        color: AppColors.textSecondary,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.3,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    const Text(
-                      'Your month in motion',
-                      style: TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 30,
-                        height: 1,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              _HeaderStatChip(
-                label: snapshot.hasStepPermission ? 'Today steps' : 'Sync',
-                value: snapshot.hasStepPermission
-                    ? _formatSteps(snapshot.todaySteps)
-                    : '${snapshot.syncScore}%',
-                accent: AppColors.primaryBright,
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              _HeaderPill(
-                label: snapshot.favoriteRangeLabel,
-                accent: AppColors.primaryBright,
-              ),
-              _HeaderPill(
-                label: snapshot.topPlaylistTitle,
-                accent: AppColors.accent,
-              ),
-              _HeaderPill(
-                label: '${snapshot.walkShare}% walk',
-                accent: AppColors.cinemaRed,
-              ),
-              _HeaderPill(
-                label: snapshot.hasStepPermission
-                    ? '${((snapshot.todaySteps / snapshot.goalSteps) * 100).round().clamp(0, 100)}% goal'
-                    : 'Health Connect',
-                accent: AppColors.warning,
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StatsIntroScreen extends StatelessWidget {
-  const _StatsIntroScreen({
-    required this.snapshot,
-    required this.isActive,
-    required this.onNext,
-  });
-  final _StatsSnapshot snapshot;
-  final bool isActive;
-  final VoidCallback onNext;
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedOpacity(
-      duration: const Duration(milliseconds: 220),
-      opacity: isActive ? 1 : 0.96,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 188),
-        child: FrostedPanel(
-          radius: 34,
-          padding: const EdgeInsets.fromLTRB(28, 24, 28, 24),
-          elevated: true,
-          glowColor: AppColors.primary,
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xB814221B), Color(0x8A111413), Color(0xCC080A09)],
-          ),
-          child: Column(
-            children: [
-              const SizedBox(height: 4),
-              Container(
-                width: 102,
-                height: 102,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    colors: [
-                      AppColors.primaryBright.withValues(alpha: 0.72),
-                      AppColors.primary.withValues(alpha: 0.24),
-                      Colors.transparent,
-                    ],
-                  ),
-                ),
-                child: Center(
-                  child: Container(
-                    width: 62,
-                    height: 62,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: AppColors.background.withValues(alpha: 0.76),
-                    ),
-                    child: const Icon(
-                      Icons.insights_rounded,
-                      size: 30,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                ),
-              ),
-              const Spacer(),
-              const Text(
-                'Your month in motion',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 36,
-                  height: 0.96,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                '${snapshot.averageBpm} BPM average | ${snapshot.syncScore}% sync | ${snapshot.topPlaylistTitle}',
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 14,
-                  height: 1.35,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 18),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                alignment: WrapAlignment.center,
-                children: [
-                  _HeaderPill(
-                    label: snapshot.favoriteRangeLabel,
-                    accent: AppColors.primaryBright,
-                  ),
-                  _HeaderPill(
-                    label:
-                        '${snapshot.walkShare}% walk / ${snapshot.runShare}% run',
-                    accent: AppColors.cinemaRed,
-                  ),
-                ],
-              ),
-              const Spacer(),
-              _StoryCtaButton(
-                label: 'Start exploring',
-                icon: Icons.arrow_forward_rounded,
-                onTap: onNext,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _StatsFeatureScreen extends StatelessWidget {
-  const _StatsFeatureScreen({
-    required this.snapshot,
-    required this.isActive,
-    required this.title,
-    required this.eyebrow,
-    required this.value,
-    required this.suffix,
-    required this.accent,
-    required this.secondaryAccent,
-    required this.chartValues,
-    required this.chartLabels,
-    required this.onNext,
-  });
-  final _StatsSnapshot snapshot;
-  final bool isActive;
-  final String title;
-  final String eyebrow;
-  final String value;
-  final String suffix;
-  final Color accent;
-  final Color secondaryAccent;
-  final List<int> chartValues;
-  final List<String> chartLabels;
-  final VoidCallback onNext;
-  @override
-  Widget build(BuildContext context) {
-    final maxValue = chartValues.reduce(math.max).toDouble();
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(0, 8, 0, 188),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: FrostedPanel(
-              radius: 36,
-              padding: const EdgeInsets.fromLTRB(22, 22, 22, 22),
-              elevated: true,
-              glowColor: accent,
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  accent.withValues(alpha: 0.44),
-                  secondaryAccent.withValues(alpha: 0.22),
-                  AppColors.background.withValues(alpha: 0.92),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    eyebrow,
-                    style: const TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 30,
-                      height: 0.96,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const Spacer(),
-                  TweenAnimationBuilder<double>(
-                    tween: Tween(begin: 0, end: isActive ? 1 : 0),
-                    duration: const Duration(milliseconds: 1450),
-                    curve: Curves.easeOutCubic,
-                    builder: (context, progress, _) {
-                      return SizedBox(
-                        height: 124,
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            for (var i = 0; i < chartValues.length; i++) ...[
-                              Expanded(
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.end,
-                                  children: [
-                                    Text(
-                                      '${chartValues[i]}',
-                                      style: const TextStyle(
-                                        color: AppColors.textPrimary,
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Expanded(
-                                      child: Align(
-                                        alignment: Alignment.bottomCenter,
-                                        child: Container(
-                                          width: double.infinity,
-                                          height:
-                                              (((chartValues[i] / maxValue) *
-                                                      92)
-                                                  .clamp(26, 92) *
-                                              progress),
-                                          decoration: BoxDecoration(
-                                            borderRadius: BorderRadius.circular(
-                                              999,
-                                            ),
-                                            color: accent,
-                                            boxShadow: AppFx.softGlow(
-                                              accent,
-                                              strength: 0.16,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      chartLabels[i],
-                                      style: const TextStyle(
-                                        color: AppColors.textMuted,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              if (i != chartValues.length - 1)
-                                const SizedBox(width: 12),
-                            ],
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 22),
-                  RichText(
-                    text: TextSpan(
-                      children: [
-                        TextSpan(
-                          text: value,
-                          style: const TextStyle(
-                            color: AppColors.textPrimary,
-                            fontSize: 46,
-                            height: 1,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        TextSpan(
-                          text: ' $suffix',
-                          style: TextStyle(
-                            color: accent,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    snapshot.averageBpmInsight,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 13,
-                      height: 1.3,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 14),
-          _StoryCtaButton(
-            label: 'Keep discovering',
-            icon: Icons.keyboard_double_arrow_down_rounded,
-            onTap: onNext,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StatsSplitStoryScreen extends StatelessWidget {
-  const _StatsSplitStoryScreen({
-    required this.snapshot,
-    required this.isActive,
-    required this.onNext,
-  });
-  final _StatsSnapshot snapshot;
-  final bool isActive;
-  final VoidCallback onNext;
-  @override
-  Widget build(BuildContext context) {
-    final total = math.max(1, snapshot.walkShare + snapshot.runShare);
-    final walkRatio = snapshot.walkShare / total;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(0, 8, 0, 188),
-      child: Column(
-        children: [
-          Expanded(
-            child: FrostedPanel(
-              radius: 36,
-              padding: const EdgeInsets.fromLTRB(22, 22, 22, 22),
-              elevated: true,
-              glowColor: AppColors.cinemaRed,
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(0x99111714), Color(0xCC090A0A)],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Session split',
-                    style: TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  const Text(
-                    'How your month was built',
-                    style: TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 30,
-                      height: 0.96,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const Spacer(),
-                  TweenAnimationBuilder<double>(
-                    tween: Tween(begin: 0, end: isActive ? walkRatio : 0),
-                    duration: const Duration(milliseconds: 1350),
-                    curve: Curves.easeOutCubic,
-                    builder: (context, progress, _) {
-                      return Center(
-                        child: SizedBox(
-                          width: 190,
-                          height: 190,
-                          child: CustomPaint(
-                            painter: _StatsRingPainter(
-                              progress: progress,
-                              primary: AppColors.primaryBright,
-                              secondary: AppColors.cinemaRed,
-                            ),
-                            child: Center(
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    '${snapshot.walkShare}% / ${snapshot.runShare}%',
-                                    textAlign: TextAlign.center,
-                                    style: const TextStyle(
-                                      color: AppColors.textPrimary,
-                                      fontSize: 26,
-                                      height: 1,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  const Text(
-                                    'walk / run',
-                                    style: TextStyle(
-                                      color: AppColors.textSecondary,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                  const Spacer(),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _StatsSplitFeature(
-                          label: 'Walk',
-                          value: '${snapshot.walkShare}%',
-                          accent: AppColors.primaryBright,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _StatsSplitFeature(
-                          label: 'Run',
-                          value: '${snapshot.runShare}%',
-                          accent: AppColors.cinemaRed,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 14),
-          _StoryCtaButton(
-            label: 'Open full summary',
-            icon: Icons.auto_graph_rounded,
-            onTap: onNext,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StatsPagerDots extends StatelessWidget {
-  const _StatsPagerDots({required this.activeIndex});
-
-  final int activeIndex;
-
-  @override
-  Widget build(BuildContext context) {
-    return FrostedPanel(
-      radius: 999,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      glowColor: AppColors.primary,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (var i = 0; i < 3; i++) ...[
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 220),
-              width: i == activeIndex ? 22 : 8,
-              height: 8,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(999),
-                color: i == activeIndex
-                    ? AppColors.primaryBright
-                    : Colors.white.withValues(alpha: 0.22),
-              ),
-            ),
-            if (i != 2) const SizedBox(width: 8),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _StoryCtaButton extends StatelessWidget {
-  const _StoryCtaButton({
-    required this.label,
-    required this.icon,
-    required this.onTap,
-  });
-
-  final String label;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(999),
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xCC1ED760), Color(0x66FF5A5F)],
-          ),
-          boxShadow: AppFx.softGlow(AppColors.primary, strength: 0.16),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              label,
-              style: const TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 14,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Icon(icon, color: AppColors.textPrimary, size: 18),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _StatsSplitFeature extends StatelessWidget {
-  const _StatsSplitFeature({
-    required this.label,
-    required this.value,
-    required this.accent,
-  });
-
-  final String label;
-  final String value;
-  final Color accent;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        color: Colors.white.withValues(alpha: 0.04),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 12,
-            height: 12,
-            decoration: BoxDecoration(
-              color: accent,
-              borderRadius: BorderRadius.circular(999),
-            ),
-          ),
-          const SizedBox(height: 18),
-          Text(
-            label,
-            style: const TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: const TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 28,
-              height: 1,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StatsHeroCard extends StatelessWidget {
-  const _StatsHeroCard({
-    required this.eyebrow,
-    required this.value,
-    required this.insight,
-    required this.accent,
-    required this.secondaryAccent,
-    required this.chartValues,
-    this.suffix,
-  });
-
-  final String eyebrow;
-  final String value;
-  final String? suffix;
-  final String insight;
-  final Color accent;
-  final Color secondaryAccent;
-  final List<int> chartValues;
-
-  @override
-  Widget build(BuildContext context) {
-    final maxValue = chartValues.isEmpty
-        ? 1
-        : chartValues.reduce(math.max).toDouble();
-
-    return FrostedPanel(
-      padding: const EdgeInsets.all(18),
-      radius: 26,
-      glowColor: accent,
-      elevated: true,
-      gradient: LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [
-          accent.withValues(alpha: 0.42),
-          secondaryAccent.withValues(alpha: 0.22),
-          AppColors.background.withValues(alpha: 0.82),
-        ],
-      ),
-      child: SizedBox(
-        height: 176,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              eyebrow,
-              style: const TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const Spacer(),
-            SizedBox(
-              height: 46,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  for (var i = 0; i < chartValues.length; i++) ...[
-                    Expanded(
-                      child: Align(
-                        alignment: Alignment.bottomCenter,
-                        child: Container(
-                          height: ((chartValues[i] / maxValue) * 44).clamp(
-                            10,
-                            44,
-                          ),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(999),
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                accent.withValues(alpha: 0.95),
-                                secondaryAccent.withValues(alpha: 0.5),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    if (i != chartValues.length - 1) const SizedBox(width: 6),
-                  ],
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-            RichText(
-              text: TextSpan(
-                children: [
-                  TextSpan(
-                    text: value,
-                    style: const TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 30,
-                      height: 1,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  if (suffix != null)
-                    TextSpan(
-                      text: ' $suffix',
-                      style: TextStyle(
-                        color: accent,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              insight,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 12,
-                height: 1.3,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _StatsMiniCard extends StatelessWidget {
-  const _StatsMiniCard({
-    required this.label,
-    required this.value,
-    required this.caption,
-    required this.accent,
-    required this.icon,
-  });
-
-  final String label;
-  final String value;
-  final String caption;
-  final Color accent;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    return FrostedPanel(
-      padding: const EdgeInsets.all(16),
-      radius: 24,
-      glowColor: accent,
-      child: SizedBox(
-        height: 108,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(icon, size: 16, color: accent),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const Spacer(),
-            Text(
-              value,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 20,
-                height: 1,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              caption,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 12,
-                height: 1.35,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _StatsTrendCard extends StatelessWidget {
-  const _StatsTrendCard({required this.snapshot});
-
-  final _StatsSnapshot snapshot;
-
-  @override
-  Widget build(BuildContext context) {
-    final maxWeek = snapshot.weeklyBpmTrend.reduce(math.max).toDouble();
-    final maxZone = snapshot.bpmZoneShares.reduce(math.max).toDouble();
-
-    return FrostedPanel(
-      padding: const EdgeInsets.all(20),
-      radius: 28,
-      glowColor: AppColors.primary,
-      elevated: true,
-      gradient: const LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [Color(0xAA11231A), Color(0xCC0A0C0B)],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Text(
-                'BPM trend',
-                style: TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const Spacer(),
-              Text(
-                snapshot.favoriteRangeLabel,
-                style: const TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              for (var i = 0; i < snapshot.weeklyBpmTrend.length; i++) ...[
-                Expanded(
-                  child: _VerticalTrendBar(
-                    label: 'W${i + 1}',
-                    value: snapshot.weeklyBpmTrend[i],
-                    maxValue: maxWeek,
-                    accent: i == snapshot.weeklyBpmTrend.length - 1
-                        ? AppColors.primaryBright
-                        : AppColors.primary,
-                  ),
-                ),
-                if (i != snapshot.weeklyBpmTrend.length - 1)
-                  const SizedBox(width: 14),
-              ],
-            ],
-          ),
-          const SizedBox(height: 24),
-          const Text(
-            'Zones',
-            style: TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 10),
-          for (var i = 0; i < snapshot.bpmZoneLabels.length; i++) ...[
-            _HorizontalShareBar(
-              label: snapshot.bpmZoneLabels[i],
-              value: snapshot.bpmZoneShares[i],
-              maxValue: maxZone,
-              accent: i == 1 ? AppColors.primaryBright : AppColors.cinemaRed,
-            ),
-            if (i != snapshot.bpmZoneLabels.length - 1)
-              const SizedBox(height: 10),
-          ],
-          const SizedBox(height: 20),
-          Row(
-            children: [
-              Expanded(
-                child: _StatsSplitChip(
-                  label: 'Walk sessions',
-                  value: '${snapshot.walkShare}%',
-                  accent: AppColors.primary,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _StatsSplitChip(
-                  label: 'Run sessions',
-                  value: '${snapshot.runShare}%',
-                  accent: AppColors.cinemaRed,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StatsDonutCard extends StatelessWidget {
-  const _StatsDonutCard({
-    required this.snapshot,
-    this.height = 276,
-    this.compact = true,
-  });
-
-  final _StatsSnapshot snapshot;
-  final double height;
-  final bool compact;
-
-  @override
-  Widget build(BuildContext context) {
-    final total = math.max(1, snapshot.walkShare + snapshot.runShare);
-    final walkRatio = snapshot.walkShare / total;
-
-    return FrostedPanel(
-      radius: 28,
-      padding: const EdgeInsets.all(16),
-      glowColor: AppColors.cinemaRed,
-      elevated: true,
-      gradient: const LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [Color(0x99111514), Color(0xCC090A0A)],
-      ),
-      child: SizedBox(
-        height: height,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Session split',
-              style: TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: Center(
-                child: SizedBox(
-                  width: compact ? 128 : 156,
-                  height: compact ? 128 : 156,
-                  child: CustomPaint(
-                    painter: _StatsRingPainter(
-                      progress: walkRatio,
-                      primary: AppColors.primaryBright,
-                      secondary: AppColors.cinemaRed,
-                    ),
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            '${snapshot.walkShare}/${snapshot.runShare}',
-                            style: const TextStyle(
-                              color: AppColors.textPrimary,
-                              fontSize: 20,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          const Text(
-                            'walk / run',
-                            style: TextStyle(
-                              color: AppColors.textSecondary,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _StatsLegendRow(
-                    label: 'Walk',
-                    value: '${snapshot.walkShare}%',
-                    accent: AppColors.primaryBright,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _StatsLegendRow(
-                    label: 'Run',
-                    value: '${snapshot.runShare}%',
-                    accent: AppColors.cinemaRed,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _StatsLegendRow extends StatelessWidget {
-  const _StatsLegendRow({
-    required this.label,
-    required this.value,
-    required this.accent,
-  });
-
-  final String label;
-  final String value;
-  final Color accent;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(
-          width: 10,
-          height: 10,
-          decoration: BoxDecoration(
-            color: accent,
-            borderRadius: BorderRadius.circular(999),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Text(
-          label,
-          style: const TextStyle(
-            color: AppColors.textSecondary,
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const Spacer(),
-        Text(
-          value,
-          style: const TextStyle(
-            color: AppColors.textPrimary,
-            fontSize: 13,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _VerticalTrendBar extends StatelessWidget {
-  const _VerticalTrendBar({
-    required this.label,
-    required this.value,
-    required this.maxValue,
-    required this.accent,
-  });
-
-  final String label;
-  final int value;
-  final double maxValue;
-  final Color accent;
-
-  @override
-  Widget build(BuildContext context) {
-    final ratio = maxValue <= 0 ? 0.0 : (value / maxValue).clamp(0.22, 1.0);
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          '$value',
-          style: const TextStyle(
-            color: AppColors.textPrimary,
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Container(
-          height: 84,
-          alignment: Alignment.bottomCenter,
-          child: FractionallySizedBox(
-            heightFactor: ratio,
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(999),
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    accent.withValues(alpha: 0.92),
-                    accent.withValues(alpha: 0.38),
-                  ],
-                ),
-                boxShadow: AppFx.softGlow(accent, strength: 0.16),
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          label,
-          style: const TextStyle(
-            color: AppColors.textMuted,
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _HorizontalShareBar extends StatelessWidget {
-  const _HorizontalShareBar({
-    required this.label,
-    required this.value,
-    required this.maxValue,
-    required this.accent,
-  });
-
-  final String label;
-  final int value;
-  final double maxValue;
-  final Color accent;
-
-  @override
-  Widget build(BuildContext context) {
-    final ratio = maxValue <= 0 ? 0.0 : (value / maxValue).clamp(0.08, 1.0);
-
-    return Row(
-      children: [
-        SizedBox(
-          width: 68,
-          child: Text(
-            label,
-            style: const TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-        Expanded(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(999),
-            child: Container(
-              height: 12,
-              color: Colors.white.withValues(alpha: 0.06),
-              alignment: Alignment.centerLeft,
-              child: FractionallySizedBox(
-                widthFactor: ratio,
-                child: Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.centerLeft,
-                      end: Alignment.centerRight,
-                      colors: [accent, accent.withValues(alpha: 0.36)],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Text(
-          '$value',
-          style: const TextStyle(
-            color: AppColors.textPrimary,
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _StatsSplitChip extends StatelessWidget {
-  const _StatsSplitChip({
-    required this.label,
-    required this.value,
-    required this.accent,
-  });
-
-  final String label;
-  final String value;
-  final Color accent;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0x592A3530), Color(0x33202422)],
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(
-              color: accent,
-              borderRadius: BorderRadius.circular(999),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              label,
-              style: const TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-          Text(
-            value,
-            style: const TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 14,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StatsFactCard extends StatelessWidget {
-  const _StatsFactCard({
-    required this.title,
-    required this.value,
-    required this.caption,
-    required this.accent,
-    required this.icon,
-  });
-
-  final String title;
-  final String value;
-  final String caption;
-  final Color accent;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    return FrostedPanel(
-      padding: const EdgeInsets.all(16),
-      radius: 24,
-      glowColor: accent,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 18, color: accent),
-              const Spacer(),
-              Container(
-                width: 26,
-                height: 26,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(999),
-                  color: accent.withValues(alpha: 0.12),
-                ),
-              ),
-            ],
-          ),
-          const Spacer(),
-          Text(
-            title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 18,
-              height: 1.05,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            caption,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 12,
-              height: 1.35,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 class _DailyStepsHero extends StatelessWidget {
   const _DailyStepsHero({
@@ -3548,99 +2192,82 @@ class _DailyStepsHero extends StatelessWidget {
   }
 }
 
-class _StartSessionCard extends StatelessWidget {
-  const _StartSessionCard({
-    required this.state,
-    required this.userCadence,
-    required this.trackBpm,
-    required this.syncGap,
-    required this.onGoToLibrary,
-    required this.onChangeBpm,
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel({
+    required this.title,
+    required this.trailing,
+    this.onTitleTap,
   });
 
-  final _HomeMockState state;
-  final int userCadence;
-  final int trackBpm;
-  final int syncGap;
-  final VoidCallback onGoToLibrary;
-  final VoidCallback onChangeBpm;
+  final String title;
+  final String trailing;
+  final VoidCallback? onTitleTap;
 
   @override
   Widget build(BuildContext context) {
-    return FrostedPanel(
-      padding: const EdgeInsets.all(20),
-      radius: 30,
-      glowColor: AppColors.cinemaRed,
-      elevated: true,
+    return Row(
+      children: [
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTitleTap,
+          child: Text(
+            title,
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        const Spacer(),
+        Text(
+          trailing,
+          style: const TextStyle(
+            color: AppColors.textMuted,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _InlineEmptyState extends StatelessWidget {
+  const _InlineEmptyState({required this.title, required this.subtitle});
+
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: AppFx.glassDecoration(
+        radius: 24,
+        glowColor: AppColors.accent,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Quick actions',
-            style: TextStyle(
+          Text(
+            title,
+            style: const TextStyle(
               color: AppColors.textPrimary,
-              fontSize: 26,
-              height: 1,
-              fontWeight: FontWeight.w800,
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Text(
-            state.sessionPrompt,
+            subtitle,
             style: const TextStyle(
               color: AppColors.textSecondary,
-              fontSize: 14,
+              fontSize: 13,
               height: 1.4,
+              fontWeight: FontWeight.w600,
             ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _ActionPillButton(
-                  label: 'Go To Library',
-                  icon: Icons.library_music_rounded,
-                  filled: true,
-                  onTap: onGoToLibrary,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _ActionPillButton(
-                  label: 'Change BPM',
-                  icon: Icons.tune_rounded,
-                  onTap: onChangeBpm,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          Row(
-            children: [
-              Expanded(
-                child: _SyncStatPill(
-                  label: 'Track BPM',
-                  value: '$trackBpm',
-                  accent: AppColors.primaryBright,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _SyncStatPill(
-                  label: 'Cadence',
-                  value: '$userCadence',
-                  accent: AppColors.accent,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _SyncStatPill(
-                  label: 'Gap',
-                  value: '$syncGap BPM',
-                  accent: AppColors.warning,
-                ),
-              ),
-            ],
           ),
         ],
       ),
@@ -3737,6 +2364,254 @@ class _JumpBackInRow extends StatelessWidget {
       ),
     );
   }
+}
+
+class _StartSessionCard extends StatelessWidget {
+  const _StartSessionCard({
+    required this.state,
+    required this.userCadence,
+    required this.trackBpm,
+    required this.syncGap,
+    required this.onGoToLibrary,
+    required this.onChangeBpm,
+    required this.onTrackBpm,
+  });
+
+  final _HomeMockState state;
+  final int userCadence;
+  final int trackBpm;
+  final int syncGap;
+  final VoidCallback onGoToLibrary;
+  final VoidCallback onChangeBpm;
+  final VoidCallback onTrackBpm;
+
+  @override
+  Widget build(BuildContext context) {
+    return FrostedPanel(
+      padding: const EdgeInsets.all(20),
+      radius: 30,
+      glowColor: AppColors.cinemaRed,
+      elevated: true,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Quick actions',
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 26,
+              height: 1,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            state.sessionPrompt,
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 14,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _ActionPillButton(
+                  label: 'Go To Library',
+                  icon: Icons.library_music_rounded,
+                  filled: true,
+                  onTap: onGoToLibrary,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _ActionPillButton(
+                  label: 'Change BPM',
+                  icon: Icons.tune_rounded,
+                  onTap: onChangeBpm,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: _ActionPillButton(
+              label: 'Track BPM',
+              icon: Icons.directions_walk_rounded,
+              onTap: onTrackBpm,
+            ),
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Expanded(
+                child: _SyncStatPill(
+                  label: 'Track BPM',
+                  value: '$trackBpm',
+                  accent: AppColors.primaryBright,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _SyncStatPill(
+                  label: 'Cadence',
+                  value: '$userCadence',
+                  accent: AppColors.accent,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _SyncStatPill(
+                  label: 'Gap',
+                  value: '$syncGap BPM',
+                  accent: AppColors.warning,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BottomNav extends StatelessWidget {
+  const _BottomNav({
+    required this.items,
+    required this.selectedIndex,
+    required this.onSelected,
+  });
+
+  final List<_NavItem> items;
+  final int selectedIndex;
+  final ValueChanged<int> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF121212).withValues(alpha: 0.98),
+        border: Border(
+          top: BorderSide(
+            color: Colors.white.withValues(alpha: 0.05),
+            width: 1,
+          ),
+        ),
+      ),
+      padding: EdgeInsets.only(
+        left: 12,
+        right: 12,
+        top: 10,
+        bottom: MediaQuery.of(context).padding.bottom + 8,
+      ),
+      child: Row(
+        children: [
+          for (var i = 0; i < items.length; i++) ...[
+            Expanded(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => onSelected(i),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 220),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    color: i == selectedIndex
+                        ? AppColors.primary.withValues(alpha: 0.15)
+                        : Colors.transparent,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        items[i].icon,
+                        size: 24,
+                        color: i == selectedIndex
+                            ? AppColors.primary
+                            : Colors.white.withValues(alpha: 0.5),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        items[i].label,
+                        style: TextStyle(
+                          color: i == selectedIndex
+                              ? AppColors.primary
+                              : Colors.white.withValues(alpha: 0.5),
+                          fontSize: 11,
+                          fontWeight: i == selectedIndex
+                              ? FontWeight.w800
+                              : FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            if (i != items.length - 1) const SizedBox(width: 4),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _HeaderPill extends StatelessWidget {
+  const _HeaderPill({required this.label, required this.accent});
+
+  final String label;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        color: accent.withValues(alpha: 0.12),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: AppColors.textPrimary,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+class _NavItem {
+  const _NavItem({required this.label, required this.icon});
+
+  final String label;
+  final IconData icon;
+}
+
+class _HomeMockState {
+  const _HomeMockState({
+    required this.stepsDone,
+    required this.goalSteps,
+    required this.trackTitle,
+    required this.trackArtist,
+    required this.trackImageAsset,
+    required this.trackBpm,
+    required this.sessionPrompt,
+  });
+
+  final int stepsDone;
+  final int goalSteps;
+  final String trackTitle;
+  final String trackArtist;
+  final String trackImageAsset;
+  final int trackBpm;
+  final String sessionPrompt;
 }
 
 class _JumpBackCard extends StatelessWidget {
@@ -3855,89 +2730,6 @@ class _JumpBackCard extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _InlineEmptyState extends StatelessWidget {
-  const _InlineEmptyState({required this.title, required this.subtitle});
-
-  final String title;
-  final String subtitle;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: AppFx.glassDecoration(
-        radius: 24,
-        glowColor: AppColors.accent,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: const TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            subtitle,
-            style: const TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 13,
-              height: 1.4,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SectionLabel extends StatelessWidget {
-  const _SectionLabel({
-    required this.title,
-    required this.trailing,
-    this.onTitleTap,
-  });
-
-  final String title;
-  final String trailing;
-  final VoidCallback? onTitleTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onTitleTap,
-          child: Text(
-            title,
-            style: const TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-        const Spacer(),
-        Text(
-          trailing,
-          style: const TextStyle(
-            color: AppColors.textMuted,
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ],
     );
   }
 }
@@ -4073,370 +2865,6 @@ class _SyncStatPill extends StatelessWidget {
   }
 }
 
-class _BottomNav extends StatelessWidget {
-  const _BottomNav({
-    required this.items,
-    required this.selectedIndex,
-    required this.onSelected,
-  });
-
-  final List<_NavItem> items;
-  final int selectedIndex;
-  final ValueChanged<int> onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFF121212).withValues(alpha: 0.98),
-        border: Border(
-          top: BorderSide(
-            color: Colors.white.withValues(alpha: 0.05),
-            width: 1,
-          ),
-        ),
-      ),
-      padding: EdgeInsets.only(
-        left: 12,
-        right: 12,
-        top: 10,
-        bottom: MediaQuery.of(context).padding.bottom + 8,
-      ),
-      child: Row(
-        children: [
-          for (var i = 0; i < items.length; i++) ...[
-            Expanded(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => onSelected(i),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 220),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 4,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(16),
-                    color: i == selectedIndex
-                        ? AppColors.primary.withValues(alpha: 0.15)
-                        : Colors.transparent,
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        items[i].icon,
-                        size: 24,
-                        color: i == selectedIndex
-                            ? AppColors.primary
-                            : Colors.white.withValues(alpha: 0.5),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        items[i].label,
-                        style: TextStyle(
-                          color: i == selectedIndex
-                              ? AppColors.primary
-                              : Colors.white.withValues(alpha: 0.5),
-                          fontSize: 11,
-                          fontWeight: i == selectedIndex
-                              ? FontWeight.w800
-                              : FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            if (i != items.length - 1) const SizedBox(width: 4),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _NowPlayingBar extends StatefulWidget {
-  const _NowPlayingBar({
-    required this.trackTitle,
-    required this.trackArtist,
-    required this.trackImageAsset,
-    required this.accentColor,
-    required this.bgColor,
-    required this.trackBpm,
-    required this.userCadence,
-  });
-
-  final String trackTitle;
-  final String trackArtist;
-  final String trackImageAsset;
-  final Color accentColor;
-  final Color bgColor;
-  final int trackBpm;
-  final int userCadence;
-
-  @override
-  State<_NowPlayingBar> createState() => _NowPlayingBarState();
-}
-
-class _NowPlayingBarState extends State<_NowPlayingBar> {
-  final SpotifyRemoteService _remote = SpotifyRemoteService.instance;
-  StreamSubscription<SpotifyRemotePlayerState>? _playerSub;
-  bool _isPaused = true;
-  String? _actualTitle;
-  String? _actualArtist;
-  String? _actualImage;
-
-  void _setStateSafely(VoidCallback updater) {
-    if (!mounted) return;
-    final phase = SchedulerBinding.instance.schedulerPhase;
-    if (phase == SchedulerPhase.idle ||
-        phase == SchedulerPhase.postFrameCallbacks) {
-      setState(updater);
-      return;
-    }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) setState(updater);
-    });
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _bindRemote();
-  }
-
-  @override
-  void dispose() {
-    _playerSub?.cancel();
-    super.dispose();
-  }
-
-  Future<void> _bindRemote() async {
-    _playerSub = _remote.playerStateStream().listen((state) {
-      if (!mounted) return;
-      _setStateSafely(() {
-        _isPaused = state.isPaused;
-        if (state.trackUri.isEmpty || state.trackName.isEmpty) {
-          _actualTitle = null;
-          _actualArtist = null;
-          _actualImage = null;
-          return;
-        }
-        _actualTitle = state.trackName;
-        _actualArtist = state.artistName;
-        _actualImage = state.resolvedImageUrl;
-      });
-    });
-
-    try {
-      final playerState = await _remote.getPlayerState();
-      if (!mounted || playerState == null) return;
-      _setStateSafely(() {
-        _isPaused = playerState.isPaused;
-        if (playerState.trackUri.isEmpty || playerState.trackName.isEmpty) {
-          _actualTitle = null;
-          _actualArtist = null;
-          _actualImage = null;
-          return;
-        }
-        _actualTitle = playerState.trackName;
-        _actualArtist = playerState.artistName;
-        _actualImage = playerState.resolvedImageUrl;
-      });
-    } catch (_) {}
-  }
-
-  Future<void> _togglePlayback() async {
-    final wasPaused = _isPaused;
-    setState(() => _isPaused = !wasPaused);
-    try {
-      if (wasPaused) {
-        await _remote.resume();
-      } else {
-        await _remote.pause();
-      }
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _isPaused = wasPaused);
-    }
-  }
-
-  void _navigateToNowPlaying() {
-    final title = _actualTitle ?? widget.trackTitle;
-    if (title.isEmpty) return;
-    context.push(
-      '/now-playing',
-      extra: NowPlayingPageArgs(
-        trackTitle: title,
-        trackArtist: _actualArtist ?? widget.trackArtist,
-        trackImageAsset: _actualImage ?? widget.trackImageAsset,
-        trackBpm: widget.trackBpm,
-        userCadence: widget.userCadence,
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final title = _actualTitle ?? widget.trackTitle;
-    if (title.isEmpty) return const SizedBox.shrink();
-
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: _navigateToNowPlaying,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: AppFx.glassDecoration(
-          radius: 12,
-          elevated: true,
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [widget.bgColor, widget.bgColor.withValues(alpha: 0.8)],
-          ),
-          glowColor: widget.accentColor.withValues(alpha: 0.18),
-        ),
-        child: Row(
-          children: [
-            MediaCover(
-              imageAsset: _actualImage ?? widget.trackImageAsset,
-              size: 42,
-              borderRadius: 10,
-              child: _isPaused
-                  ? const SizedBox.shrink()
-                  : const Center(
-                      child: Icon(
-                        Icons.graphic_eq_rounded,
-                        color: AppColors.textPrimary,
-                        size: 22,
-                      ),
-                    ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _actualArtist ?? widget.trackArtist,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            _TrackPaceBadge(
-              trackBpm: widget.trackBpm,
-              userCadence: widget.userCadence,
-              accent: widget.accentColor,
-            ),
-            const SizedBox(width: 12),
-            // Play/Pause toggle button
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: _togglePlayback,
-              child: Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      AppColors.primary,
-                      AppColors.primary.withValues(alpha: 0.8),
-                    ],
-                  ),
-                  boxShadow: AppFx.softGlow(AppColors.primary, strength: 0.35),
-                ),
-                child: Icon(
-                  _isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
-                  color: AppColors.background,
-                  size: 26,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _TrackPaceBadge extends StatelessWidget {
-  const _TrackPaceBadge({
-    required this.trackBpm,
-    required this.userCadence,
-    required this.accent,
-  });
-
-  final int trackBpm;
-  final int userCadence;
-  final Color accent;
-
-  @override
-  Widget build(BuildContext context) {
-    if (trackBpm <= 0) return const SizedBox.shrink();
-
-    final diff = (trackBpm - userCadence).abs();
-    final bool isMet = diff <= 2;
-    final color = isMet ? AppColors.primaryBright : AppColors.warning;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withValues(alpha: 0.24), width: 0.5),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            '$trackBpm',
-            style: TextStyle(
-              color: color,
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-              height: 1,
-            ),
-          ),
-          const SizedBox(height: 1),
-          Text(
-            'BPM',
-            style: TextStyle(
-              color: color.withValues(alpha: 0.6),
-              fontSize: 7,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 0.4,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _ProgressRingPainter extends CustomPainter {
   const _ProgressRingPainter({required this.progress, required this.pulse});
 
@@ -4483,393 +2911,127 @@ class _ProgressRingPainter extends CustomPainter {
   }
 }
 
-class _StatsSnapshot {
-  const _StatsSnapshot({
-    required this.todaySteps,
-    required this.goalSteps,
-    required this.hasStepPermission,
-    required this.averageBpm,
-    required this.favoriteRangeLabel,
-    required this.averageBpmInsight,
-    required this.favoriteRangeInsight,
-    required this.syncScore,
-    required this.syncInsight,
-    required this.topPlaylistTitle,
-    required this.topPlaylistInsight,
-    required this.topMood,
-    required this.moodInsight,
-    required this.averageSessionMinutes,
-    required this.sessionInsight,
-    required this.walkShare,
-    required this.runShare,
-    required this.weeklyBpmTrend,
-    required this.bpmZoneLabels,
-    required this.bpmZoneShares,
-    required this.summary,
-    required this.facts,
-  });
-
-  final int todaySteps;
-  final int goalSteps;
-  final bool hasStepPermission;
-  final int averageBpm;
-  final String favoriteRangeLabel;
-  final String averageBpmInsight;
-  final String favoriteRangeInsight;
-  final int syncScore;
-  final String syncInsight;
-  final String topPlaylistTitle;
-  final String topPlaylistInsight;
-  final String topMood;
-  final String moodInsight;
-  final int averageSessionMinutes;
-  final String sessionInsight;
-  final int walkShare;
-  final int runShare;
-  final List<int> weeklyBpmTrend;
-  final List<String> bpmZoneLabels;
-  final List<int> bpmZoneShares;
-  final String summary;
-  final List<_StatsFact> facts;
-}
-
-class _StatsFact {
-  const _StatsFact({
-    required this.title,
-    required this.value,
-    required this.caption,
-    required this.accent,
-    required this.icon,
-  });
-
-  final String title;
-  final String value;
-  final String caption;
-  final Color accent;
-  final IconData icon;
-}
-
-class _NavItem {
-  const _NavItem({required this.label, required this.icon});
-
-  final String label;
-  final IconData icon;
-}
-
-class _HomeMockState {
-  const _HomeMockState({
-    required this.stepsDone,
-    required this.goalSteps,
-    required this.trackTitle,
-    required this.trackArtist,
-    required this.trackImageAsset,
-    required this.trackBpm,
-    required this.sessionPrompt,
-  });
-
-  final int stepsDone;
-  final int goalSteps;
-  final String trackTitle;
-  final String trackArtist;
-  final String trackImageAsset;
-  final int trackBpm;
-  final String sessionPrompt;
-}
-
-// ignore: unused_element
-_StatsSnapshot _buildStatsSnapshot({
-  required List<TempoPlaylist> playlists,
-  required int userCadence,
-  required int todaySteps,
-  required int goalSteps,
-  required bool hasStepPermission,
-}) {
-  final recent = playlists
-      .where((playlist) => playlist.wasRecentlyPlayed)
-      .toList();
-  final source = recent.isEmpty ? playlists : recent;
-
-  final averageBpm =
-      (source.fold<int>(0, (sum, playlist) => sum + playlist.bpm) /
-              source.length)
-          .round();
-  final favoriteStart = ((averageBpm - 4) ~/ 2) * 2;
-  final favoriteEnd = favoriteStart + 8;
-  final averageDuration =
-      (source.fold<int>(0, (sum, playlist) => sum + playlist.durationMinutes) /
-              source.length)
-          .round();
-  final syncScoreRaw =
-      (source
-                  .map(
-                    (playlist) =>
-                        100 - ((playlist.bpm - userCadence).abs() * 6),
-                  )
-                  .reduce((a, b) => a + b) /
-              source.length)
-          .round();
-  final syncScore = syncScoreRaw.clamp(52, 98);
-
-  final topPlaylist = source.reduce((a, b) {
-    final aScore =
-        (a.trackCount * 2) + a.durationMinutes + (a.isPinned ? 12 : 0);
-    final bScore =
-        (b.trackCount * 2) + b.durationMinutes + (b.isPinned ? 12 : 0);
-    return aScore >= bScore ? a : b;
-  });
-
-  final moodCounts = <String, int>{};
-  for (final playlist in source) {
-    moodCounts.update(playlist.mood, (value) => value + 1, ifAbsent: () => 1);
-  }
-  final topMoodEntry = moodCounts.entries.reduce(
-    (a, b) => a.value >= b.value ? a : b,
-  );
-
-  final walkCount = source
-      .where((playlist) => playlist.category.toLowerCase() == 'walking')
-      .length;
-  final runCount = source
-      .where((playlist) => playlist.category.toLowerCase() == 'running')
-      .length;
-  final totalSessions = math.max(1, walkCount + runCount);
-  final walkShare = ((walkCount / totalSessions) * 100).round();
-  final runShare = 100 - walkShare;
-
-  final recoveryZone = source.where((playlist) => playlist.bpm < 104).length;
-  final cruiseZone = source
-      .where((playlist) => playlist.bpm >= 104 && playlist.bpm <= 114)
-      .length;
-  final pushZone = source.where((playlist) => playlist.bpm > 114).length;
-
-  final weeklyBpmTrend = [
-    math.max(92, averageBpm - 5),
-    math.max(94, averageBpm - 2),
-    averageBpm,
-    math.min(132, averageBpm + 3),
-  ];
-
-  final monthlySteps = todaySteps * 30;
-  final monthlyGoal = goalSteps * 30;
-  final monthlyStepProgress = (((monthlySteps / monthlyGoal) * 100).round())
-      .clamp(0, 100);
-
-  return _StatsSnapshot(
-    todaySteps: todaySteps,
-    goalSteps: goalSteps,
-    hasStepPermission: hasStepPermission,
-    averageBpm: averageBpm,
-    favoriteRangeLabel: '$favoriteStart-$favoriteEnd BPM',
-    averageBpmInsight:
-        'You stay closest to your pace when the tempo sits just above easy-run range.',
-    favoriteRangeInsight:
-        'Most of your repeat plays land in this pocket for steady sessions.',
-    syncScore: syncScore,
-    syncInsight:
-        'Your recent sessions stayed within ${(averageBpm - userCadence).abs()} BPM of target on average.',
-    topPlaylistTitle: topPlaylist.title,
-    topPlaylistInsight:
-        '${topPlaylist.trackCount} tracks keeps this one in heavy rotation.',
-    topMood: topMoodEntry.key,
-    moodInsight:
-        'This mood shows up most often when you come back for another session.',
-    averageSessionMinutes: averageDuration,
-    sessionInsight:
-        'Your sessions usually settle into a $averageDuration minute rhythm.',
-    walkShare: walkShare,
-    runShare: runShare,
-    weeklyBpmTrend: weeklyBpmTrend,
-    bpmZoneLabels: const ['Recovery', 'Cruise', 'Push'],
-    bpmZoneShares: [recoveryZone, cruiseZone, pushZone],
-    summary: hasStepPermission
-        ? 'Today you are at ${_formatSteps(todaySteps)} steps, while your recent sessions gravitated toward $averageBpm BPM and a $syncScore% pace match.'
-        : 'Over the last 30 days you gravitated toward $averageBpm BPM, kept a $syncScore% pace match, and returned most often to ${topPlaylist.title}.',
-    facts: [
-      _StatsFact(
-        title: 'Sweet spot',
-        value: '$favoriteStart-$favoriteEnd BPM',
-        caption: 'Your pace lines up best when tracks live in this zone.',
-        accent: AppColors.primaryBright,
-        icon: Icons.multitrack_audio_rounded,
-      ),
-      _StatsFact(
-        title: hasStepPermission ? 'Today steps' : 'Step access',
-        value: hasStepPermission ? _formatSteps(todaySteps) : 'Connect',
-        caption: hasStepPermission
-            ? '${((todaySteps / goalSteps) * 100).round().clamp(0, 100)}% of your ${_formatSteps(goalSteps)} step goal.'
-            : 'Open the dedicated Steps page to grant Health Connect access.',
-        accent: AppColors.accent,
-        icon: Icons.directions_walk_rounded,
-      ),
-      _StatsFact(
-        title: 'Projected month',
-        value: _formatSteps(monthlySteps),
-        caption:
-            '$monthlyStepProgress% of your projected ${_formatSteps(monthlyGoal)} monthly goal at today’s pace.',
-        accent: AppColors.primary,
-        icon: Icons.calendar_month_rounded,
-      ),
-      _StatsFact(
-        title: 'Fastest energy',
-        value: '${source.map((playlist) => playlist.bpm).reduce(math.max)} BPM',
-        caption:
-            'You reach for higher-BPM tracks most on your run-leaning days.',
-        accent: AppColors.cinemaRed,
-        icon: Icons.local_fire_department_rounded,
-      ),
-      _StatsFact(
-        title: 'Repeat return',
-        value: topPlaylist.title,
-        caption: 'This is the playlist you are most likely to jump back into.',
-        accent: AppColors.warning,
-        icon: Icons.replay_rounded,
-      ),
-      _StatsFact(
-        title: 'Dominant mood',
-        value: topMoodEntry.key,
-        caption:
-            'That mood anchors most of your last-30-day listening sessions.',
-        accent: AppColors.primaryBright,
-        icon: Icons.auto_awesome_rounded,
-      ),
-    ],
-  );
-}
-
-class _HeaderStatChip extends StatelessWidget {
-  const _HeaderStatChip({
-    required this.label,
-    required this.value,
-    required this.accent,
-  });
-
-  final String label;
-  final String value;
-  final Color accent;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            accent.withValues(alpha: 0.24),
-            AppColors.background.withValues(alpha: 0.54),
-          ],
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: const TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _HeaderPill extends StatelessWidget {
-  const _HeaderPill({required this.label, required this.accent});
-
-  final String label;
-  final Color accent;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(999),
-        color: accent.withValues(alpha: 0.12),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          color: AppColors.textPrimary,
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    );
-  }
-}
-
-class _StatsRingPainter extends CustomPainter {
-  const _StatsRingPainter({
+class _StepBpmTrackingOverlay extends StatelessWidget {
+  const _StepBpmTrackingOverlay({
+    required this.steps,
+    required this.secondsRemaining,
     required this.progress,
-    required this.primary,
-    required this.secondary,
+    required this.pulse,
+    required this.onClose,
   });
 
+  final int steps;
+  final int secondsRemaining;
   final double progress;
-  final Color primary;
-  final Color secondary;
+  final Animation<double> pulse;
+  final VoidCallback onClose;
 
   @override
-  void paint(Canvas canvas, Size size) {
-    final strokeWidth = size.width * 0.12;
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = (size.width - strokeWidth) / 2;
-    final rect = Rect.fromCircle(center: center, radius: radius);
-
-    final basePaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth
-      ..strokeCap = StrokeCap.round
-      ..color = Colors.white.withValues(alpha: 0.08);
-
-    final primaryPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth
-      ..strokeCap = StrokeCap.round
-      ..color = primary;
-
-    final secondaryPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth
-      ..strokeCap = StrokeCap.round
-      ..color = secondary;
-
-    const startAngle = -math.pi / 2;
-    final primarySweep = math.pi * 2 * progress.clamp(0.0, 1.0);
-    final secondarySweep = (math.pi * 2) - primarySweep;
-
-    canvas.drawCircle(center, radius, basePaint);
-    canvas.drawArc(rect, startAngle, primarySweep, false, primaryPaint);
-    canvas.drawArc(
-      rect,
-      startAngle + primarySweep + 0.08,
-      math.max(0, secondarySweep - 0.08),
-      false,
-      secondaryPaint,
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: const Color(0xEE09100D),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  const Spacer(),
+                  IconButton(
+                    onPressed: onClose,
+                    icon: const Icon(
+                      Icons.close_rounded,
+                      color: AppColors.textPrimary,
+                    ),
+                    tooltip: 'Exit tracking',
+                  ),
+                ],
+              ),
+              const Spacer(),
+              Text(
+                'Tracking BPM',
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'Walk naturally for 20 seconds. We will use your steps to set your target BPM automatically.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 15,
+                  height: 1.45,
+                ),
+              ),
+              const SizedBox(height: 28),
+              AnimatedBuilder(
+                animation: pulse,
+                builder: (context, _) {
+                  return SizedBox(
+                    width: 220,
+                    height: 220,
+                    child: CustomPaint(
+                      painter: _ProgressRingPainter(
+                        progress: progress,
+                        pulse: pulse.value,
+                      ),
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '$secondsRemaining',
+                              style: const TextStyle(
+                                color: AppColors.textPrimary,
+                                fontSize: 52,
+                                fontWeight: FontWeight.w800,
+                                height: 1,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            const Text(
+                              'seconds left',
+                              style: TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 28),
+              Text(
+                '$steps',
+                style: const TextStyle(
+                  color: AppColors.primaryBright,
+                  fontSize: 38,
+                  fontWeight: FontWeight.w800,
+                  height: 1,
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'steps counted',
+                style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const Spacer(),
+            ],
+          ),
+        ),
+      ),
     );
-  }
-
-  @override
-  bool shouldRepaint(covariant _StatsRingPainter oldDelegate) {
-    return oldDelegate.progress != progress ||
-        oldDelegate.primary != primary ||
-        oldDelegate.secondary != secondary;
   }
 }
 
