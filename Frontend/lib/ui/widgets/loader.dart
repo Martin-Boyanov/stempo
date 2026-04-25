@@ -130,12 +130,14 @@ class WalkingLoadingScreen extends StatelessWidget {
     this.subtitle,
     this.accent = AppColors.primary,
     this.secondaryAccent = AppColors.accent,
+    this.child,
   });
 
   final String title;
   final String? subtitle;
   final Color accent;
   final Color secondaryAccent;
+  final Widget? child;
 
   @override
   Widget build(BuildContext context) {
@@ -152,9 +154,20 @@ class WalkingLoadingScreen extends StatelessWidget {
         SafeArea(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: WalkingLoader(
-              title: title,
-              subtitle: subtitle,
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  WalkingLoader(
+                    title: title,
+                    subtitle: subtitle,
+                  ),
+                  if (child != null) ...[
+                    const SizedBox(height: 20),
+                    child!,
+                  ],
+                ],
+              ),
             ),
           ),
         ),
