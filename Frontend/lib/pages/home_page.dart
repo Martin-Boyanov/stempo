@@ -537,7 +537,13 @@ class _HomeTabView extends StatelessWidget {
   final VoidCallback onRefreshPlaylists;
 
   bool _isBpmSpecificPlaylist(TempoPlaylist playlist) {
-    return playlist.title.toLowerCase().contains('bpm');
+    return isGeneratedBpmPlaylistTitle(playlist.title);
+  }
+
+  int _playlistFitDelta(TempoPlaylist playlist) {
+    final midpoint = generatedBpmPlaylistMidpoint(playlist.title);
+    final effectiveBpm = midpoint ?? playlist.bpm;
+    return (effectiveBpm - userCadence).abs();
   }
 
   @override
@@ -545,9 +551,15 @@ class _HomeTabView extends StatelessWidget {
     final regularRecents = recentPlaylists
         .where((playlist) => !_isBpmSpecificPlaylist(playlist))
         .toList(growable: false);
-    final bpmRecents = recentPlaylists
-        .where(_isBpmSpecificPlaylist)
-        .toList(growable: false);
+    final bpmRecents =
+        recentPlaylists.where(_isBpmSpecificPlaylist).toList(growable: false)
+          ..sort((a, b) {
+            final fitCompare = _playlistFitDelta(
+              a,
+            ).compareTo(_playlistFitDelta(b));
+            if (fitCompare != 0) return fitCompare;
+            return a.title.compareTo(b.title);
+          });
 
     return SingleChildScrollView(
       padding: const EdgeInsets.only(bottom: 172),
@@ -3733,7 +3745,7 @@ class _JumpBackCard extends StatelessWidget {
   final TempoPlaylist item;
   final VoidCallback onTap;
 
-  bool _isBpmPlaylist(String title) => title.toLowerCase().contains('bpm');
+  bool _isBpmPlaylist(String title) => isGeneratedBpmPlaylistTitle(title);
 
   ({int? min, int? max, int? single}) _bpmDataFromTitle(String title) {
     final rangeMatch = RegExp(

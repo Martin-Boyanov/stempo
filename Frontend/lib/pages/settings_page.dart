@@ -27,12 +27,21 @@ class SettingsPage extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 12,
+                  ),
                   child: Row(
                     children: [
                       _SettingsIconButton(
                         icon: Icons.arrow_back_ios_new_rounded,
-                        onTap: () => context.pop(),
+                        onTap: () {
+                          if (context.canPop()) {
+                            context.pop();
+                          } else {
+                            context.go('/home');
+                          }
+                        },
                       ),
                       const Expanded(
                         child: Center(
@@ -159,6 +168,7 @@ class _BpmSettingsCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Container(
                     padding: const EdgeInsets.all(10),
@@ -173,35 +183,43 @@ class _BpmSettingsCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  const Text(
-                    'Target Cadence',
-                    style: TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
+                  const Expanded(
+                    child: Text(
+                      'Target Cadence',
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
-                  const Spacer(),
-                  RichText(
-                    text: TextSpan(
-                      children: [
-                        TextSpan(
-                          text: '$currentBpm',
-                          style: const TextStyle(
-                            color: AppColors.primaryBright,
-                            fontSize: 22,
-                            fontWeight: FontWeight.w800,
-                          ),
+                  const SizedBox(width: 12),
+                  Flexible(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerRight,
+                      child: RichText(
+                        text: TextSpan(
+                          children: [
+                            TextSpan(
+                              text: '$currentBpm',
+                              style: const TextStyle(
+                                color: AppColors.primaryBright,
+                                fontSize: 22,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const TextSpan(
+                              text: ' BPM',
+                              style: TextStyle(
+                                color: AppColors.textMuted,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
                         ),
-                        const TextSpan(
-                          text: ' BPM',
-                          style: TextStyle(
-                            color: AppColors.textMuted,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
                 ],
@@ -210,7 +228,9 @@ class _BpmSettingsCard extends StatelessWidget {
               SliderTheme(
                 data: SliderTheme.of(context).copyWith(
                   trackHeight: 6,
-                  thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 10),
+                  thumbShape: const RoundSliderThumbShape(
+                    enabledThumbRadius: 10,
+                  ),
                 ),
                 child: Slider(
                   value: currentBpm.toDouble(),
@@ -310,10 +330,7 @@ class _CompactStatPill extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.04),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: accent.withValues(alpha: 0.1),
-          width: 1,
-        ),
+        border: Border.all(color: accent.withValues(alpha: 0.1), width: 1),
       ),
       child: Column(
         children: [

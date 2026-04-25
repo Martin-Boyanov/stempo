@@ -292,6 +292,12 @@ class SpotifyAuthController extends ChangeNotifier {
 
       final response = await request.close();
       final payload = await response.transform(utf8.decoder).join();
+      _debugSpotifyHttp(
+        'POST',
+        _tokenEndpoint,
+        statusCode: response.statusCode,
+        responseBody: payload,
+      );
       return _handleTokenResponse(response.statusCode, payload);
     } on SocketException {
       _status = SpotifyConnectionStatus.error;
@@ -416,6 +422,12 @@ class SpotifyAuthController extends ChangeNotifier {
 
       final response = await request.close();
       final payload = await response.transform(utf8.decoder).join();
+      _debugSpotifyHttp(
+        'POST',
+        _tokenEndpoint,
+        statusCode: response.statusCode,
+        responseBody: payload,
+      );
       return _handleTokenResponse(response.statusCode, payload);
     } on SocketException {
       _status = SpotifyConnectionStatus.error;
@@ -513,6 +525,7 @@ class SpotifyAuthController extends ChangeNotifier {
     int pageSize = 50,
     bool forceRefresh = false,
   }) async {
+    final playlist = findPlaylistById(playlistId);
     final requestedRange = _resolveRequestedRange(
       targetBpm: targetBpm,
       minBpm: minBpm,
@@ -577,14 +590,22 @@ class SpotifyAuthController extends ChangeNotifier {
         'spotify_tracks playlist=$playlistId loaded=${rawTracks.length} hasMore=${firstPage.nextUrl != null}',
       );
 
-      final filteredTracks = await _filterTracksByBpm(
-        tracks: rawTracks,
-        minBpm: requestedRange.min,
-        maxBpm: requestedRange.max,
-      );
-      _playlistTracks[playlistId] = filteredTracks;
+      if (_isGeneratedBpmPlaylist(playlist)) {
+        _playlistTracks[playlistId] = rawTracks;
+      } else {
+        final filteredTracks = await _filterTracksByBpm(
+          tracks: rawTracks,
+          minBpm: requestedRange.min,
+          maxBpm: requestedRange.max,
+        );
+        _playlistTracks[playlistId] = filteredTracks;
+      }
       _playlistTrackRanges[playlistId] = requestedRange;
-      if (rawTracks.isNotEmpty && filteredTracks.isEmpty) {
+      final resolvedTracks =
+          _playlistTracks[playlistId] ?? const <SpotifyTrack>[];
+      if (rawTracks.isNotEmpty &&
+          resolvedTracks.isEmpty &&
+          !_isGeneratedBpmPlaylist(playlist)) {
         if (_lastBackendTimedOut && _lastResolvedBpmCount == 0) {
           _playlistTrackErrors[playlistId] =
               'Backend BPM lookup timed out. Make sure backend is running and try again.';
@@ -594,7 +615,7 @@ class SpotifyAuthController extends ChangeNotifier {
         }
       }
       _debugTrackLoad(
-        'done playlist=$playlistId kept=${filteredTracks.length} range=${requestedRange.min}-${requestedRange.max}',
+        'done playlist=$playlistId kept=${resolvedTracks.length} range=${requestedRange.min}-${requestedRange.max} generated=${_isGeneratedBpmPlaylist(playlist)}',
       );
     } on _ApiRequestException catch (e) {
       _playlistTrackErrors[playlistId] =
@@ -637,6 +658,7 @@ class SpotifyAuthController extends ChangeNotifier {
     notifyListeners();
 
     try {
+      final playlist = findPlaylistById(playlistId);
       final requestedRange = _resolveRequestedRange(
         targetBpm: targetBpm,
         minBpm: minBpm,
@@ -656,19 +678,27 @@ class SpotifyAuthController extends ChangeNotifier {
       _playlistDisplayTracks[playlistId] = mergedDisplayTracks;
       _playlistTrackNextUrls[playlistId] = page.nextUrl;
 
-      final filteredPageTracks = await _filterTracksByBpm(
-        tracks: page.tracks,
-        minBpm: requestedRange.min,
-        maxBpm: requestedRange.max,
-      );
-      _playlistTracks[playlistId] = [
-        ...existingFilteredTracks,
-        ...filteredPageTracks,
-      ];
+      if (_isGeneratedBpmPlaylist(playlist)) {
+        _playlistTracks[playlistId] = mergedDisplayTracks;
+      } else {
+        final filteredPageTracks = await _filterTracksByBpm(
+          tracks: page.tracks,
+          minBpm: requestedRange.min,
+          maxBpm: requestedRange.max,
+        );
+        _playlistTracks[playlistId] = [
+          ...existingFilteredTracks,
+          ...filteredPageTracks,
+        ];
+      }
       _playlistTrackRanges[playlistId] = requestedRange;
       _playlistTrackErrors.remove(playlistId);
+      final keptTrackCount = _isGeneratedBpmPlaylist(playlist)
+          ? mergedDisplayTracks.length
+          : (_playlistTracks[playlistId]?.length ?? 0) -
+                existingFilteredTracks.length;
       _debugTrackLoad(
-        'spotify_tracks_page_loaded playlist=$playlistId pageTracks=${page.tracks.length} total=${mergedDisplayTracks.length} keptAdded=${filteredPageTracks.length} hasMore=${page.nextUrl != null}',
+        'spotify_tracks_page_loaded playlist=$playlistId pageTracks=${page.tracks.length} total=${mergedDisplayTracks.length} keptAdded=$keptTrackCount hasMore=${page.nextUrl != null} generated=${_isGeneratedBpmPlaylist(playlist)}',
       );
     } on _ApiRequestException catch (e) {
       _playlistTrackErrors[playlistId] =
@@ -707,11 +737,7 @@ class SpotifyAuthController extends ChangeNotifier {
     }
   }
 
-  _BpmRange _resolveRequestedRange({
-    int? targetBpm,
-    int? minBpm,
-    int? maxBpm,
-  }) {
+  _BpmRange _resolveRequestedRange({int? targetBpm, int? minBpm, int? maxBpm}) {
     if (minBpm != null && maxBpm != null) {
       return _BpmRange(min: minBpm, max: maxBpm);
     }
@@ -1000,6 +1026,11 @@ class SpotifyAuthController extends ChangeNotifier {
     final bpmFetchResult = await _fetchTrackBpmsBatch(uniqueTrackIds);
     _lastResolvedBpmCount = bpmFetchResult.items.length;
     _lastBackendTimedOut = bpmFetchResult.timedOut;
+    _trackBpmCache.addEntries(
+      bpmFetchResult.items.entries.map(
+        (entry) => MapEntry(entry.key, entry.value?.round()),
+      ),
+    );
 
     final resolvedTracks = tracks
         .map((track) {
@@ -1020,6 +1051,11 @@ class SpotifyAuthController extends ChangeNotifier {
         })
         .toList(growable: false);
     return resolvedTracks.whereType<SpotifyTrack>().toList(growable: false);
+  }
+
+  bool _isGeneratedBpmPlaylist(TempoPlaylist? playlist) {
+    if (playlist == null) return false;
+    return isGeneratedBpmPlaylistTitle(playlist.title);
   }
 
   Future<_BpmBatchFetchResult> _fetchTrackBpmsBatch(
@@ -1132,6 +1168,12 @@ class SpotifyAuthController extends ChangeNotifier {
           .transform(utf8.decoder)
           .join()
           .timeout(_spotifyRequestTimeout);
+      _debugSpotifyHttp(
+        'GET',
+        url,
+        statusCode: response.statusCode,
+        responseBody: payload,
+      );
       final json = jsonDecode(payload);
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -1179,6 +1221,13 @@ class SpotifyAuthController extends ChangeNotifier {
           .transform(utf8.decoder)
           .join()
           .timeout(_spotifyRequestTimeout);
+      _debugSpotifyHttp(
+        'POST',
+        url,
+        statusCode: response.statusCode,
+        requestBody: jsonEncode(body),
+        responseBody: payload,
+      );
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw _ApiRequestException(
@@ -1305,6 +1354,30 @@ class SpotifyAuthController extends ChangeNotifier {
   void _debugTrackLoad(String message) {
     if (!kDebugMode) return;
     debugPrint('[PlaylistTracks] $message');
+  }
+
+  void _debugSpotifyHttp(
+    String method,
+    String url, {
+    int? statusCode,
+    String? requestBody,
+    String? responseBody,
+  }) {
+    if (!kDebugMode) return;
+    final statusLabel = statusCode?.toString() ?? 'network';
+    final trimmedRequest = _truncateDebugBody(requestBody);
+    final trimmedResponse = _truncateDebugBody(responseBody);
+    debugPrint(
+      '[SpotifyHTTP] method=$method status=$statusLabel url=$url request=${trimmedRequest ?? '<none>'} response=${trimmedResponse ?? '<none>'}',
+    );
+  }
+
+  String? _truncateDebugBody(String? value) {
+    if (value == null) return null;
+    final normalized = value.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (normalized.isEmpty) return '<empty>';
+    if (normalized.length <= 400) return normalized;
+    return '${normalized.substring(0, 400)}...';
   }
 
   String _generateCodeVerifier() {
