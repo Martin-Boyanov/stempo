@@ -298,6 +298,9 @@ class _PlaylistPageState extends State<PlaylistPage> {
                 .where((uri) => uri.isNotEmpty)
                 .toList(growable: false),
             trackBpmsByUri: const <String, int>{},
+            returnRoute:
+                '/playlist/${widget.args.playlist.id}?cadence=${auth.userCadence}',
+            returnExtra: widget.args,
           ),
         );
         return;
@@ -384,6 +387,9 @@ class _PlaylistPageState extends State<PlaylistPage> {
             for (final track in tracks)
               if (track.spotifyUri.isNotEmpty) track.spotifyUri: track.bpm,
           },
+          returnRoute:
+              '/playlist/${widget.args.playlist.id}?cadence=$currentCadence',
+          returnExtra: widget.args,
         ),
       );
     } finally {
@@ -442,19 +448,15 @@ class _PlaylistPageState extends State<PlaylistPage> {
                           _RoundIconButton(
                             icon: Icons.arrow_back_ios_new_rounded,
                             onTap: () {
-                              if (context.canPop()) {
-                                context.pop();
-                              } else {
-                                switch (widget.args.sourceTab) {
-                                  case PlaylistSourceTab.home:
-                                    context.go('/home?tab=home');
-                                  case PlaylistSourceTab.search:
-                                    context.go('/home?tab=search');
-                                  case PlaylistSourceTab.library:
-                                    context.go('/home?tab=library');
-                                  case PlaylistSourceTab.modes:
-                                    context.go('/home?tab=modes');
-                                }
+                              switch (widget.args.sourceTab) {
+                                case PlaylistSourceTab.home:
+                                  context.go('/home?tab=home');
+                                case PlaylistSourceTab.search:
+                                  context.go('/home?tab=search');
+                                case PlaylistSourceTab.library:
+                                  context.go('/home?tab=library');
+                                case PlaylistSourceTab.modes:
+                                  context.go('/home?tab=modes');
                               }
                             },
                           ),
@@ -554,6 +556,9 @@ class _PlaylistPageState extends State<PlaylistPage> {
                               if (track.spotifyUri.isNotEmpty)
                                 track.spotifyUri: track.bpm,
                           },
+                          returnRoute:
+                              '/playlist/${widget.args.playlist.id}?cadence=${auth.userCadence}',
+                          returnExtra: widget.args,
                         ),
                       ),
                       const SizedBox(height: 8),

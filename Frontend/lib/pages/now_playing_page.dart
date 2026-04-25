@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:palette_generator/palette_generator.dart';
+import 'package:go_router/go_router.dart';
 
 import '../controllers/spotify_remote_service.dart';
 import '../state/auth_providers.dart';
@@ -21,6 +22,8 @@ class NowPlayingPageArgs {
     this.spotifyUri,
     this.allowedTrackUris = const <String>[],
     this.trackBpmsByUri = const <String, int>{},
+    this.returnRoute,
+    this.returnExtra,
   });
 
   final String trackTitle;
@@ -31,6 +34,8 @@ class NowPlayingPageArgs {
   final String? spotifyUri;
   final List<String> allowedTrackUris;
   final Map<String, int> trackBpmsByUri;
+  final String? returnRoute;
+  final Object? returnExtra;
 }
 
 class NowPlayingPage extends StatefulWidget {
@@ -81,6 +86,21 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) setState(updater);
     });
+  }
+
+  void _handleBack() {
+    final returnRoute = widget.args.returnRoute;
+    if (returnRoute != null && returnRoute.isNotEmpty) {
+      context.pushReplacement(returnRoute, extra: widget.args.returnExtra);
+      return;
+    }
+
+    if (context.canPop()) {
+      context.pop();
+      return;
+    }
+
+    context.go('/home?tab=home');
   }
 
   @override
@@ -513,7 +533,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                     children: [
                       _TopActionButton(
                         icon: Icons.keyboard_arrow_down_rounded,
-                        onTap: () => Navigator.of(context).maybePop(),
+                        onTap: _handleBack,
                       ),
                       const Spacer(),
                       Row(

@@ -21,6 +21,8 @@ class StempoNowPlayingBar extends StatefulWidget {
     this.initialTrackBpm = 0,
     this.allowedTrackUris = const <String>[],
     this.trackBpmsByUri = const <String, int>{},
+    this.returnRoute,
+    this.returnExtra,
   });
 
   final int userCadence;
@@ -30,6 +32,8 @@ class StempoNowPlayingBar extends StatefulWidget {
   final int initialTrackBpm;
   final List<String> allowedTrackUris;
   final Map<String, int> trackBpmsByUri;
+  final String? returnRoute;
+  final Object? returnExtra;
 
   @override
   State<StempoNowPlayingBar> createState() => _StempoNowPlayingBarState();
@@ -56,6 +60,8 @@ class _StempoNowPlayingBarState extends State<StempoNowPlayingBar> {
     _artist = widget.initialTrackArtist;
     _image = widget.initialTrackImageAsset;
     _trackBpm = widget.initialTrackBpm > 0 ? widget.initialTrackBpm : null;
+    _isPaused = widget.initialTrackTitle.isEmpty;
+    _isLoaded = widget.initialTrackTitle.isNotEmpty;
     _bindRemote();
     if ((_image ?? '').isNotEmpty) {
       unawaited(_updateSongPalette(_image));
@@ -217,6 +223,8 @@ class _StempoNowPlayingBarState extends State<StempoNowPlayingBar> {
         spotifyUri: _trackUri.isNotEmpty ? _trackUri : null,
         allowedTrackUris: widget.allowedTrackUris,
         trackBpmsByUri: widget.trackBpmsByUri,
+        returnRoute: widget.returnRoute,
+        returnExtra: widget.returnExtra,
       ),
     );
   }

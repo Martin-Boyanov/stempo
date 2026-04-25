@@ -93,9 +93,18 @@ class AppRouter {
       ),
       GoRoute(
         path: '/home',
-        builder: (context, state) => HomePage(
-          initialTab: _homeTabFromQuery(state.uri),
-        ),
+        builder: (context, state) {
+          final args = state.extra;
+          if (args is HomePageArgs) {
+            return HomePage(
+              initialTab: args.initialTab,
+              initialModesSnapshot: args.modesSnapshot,
+            );
+          }
+          return HomePage(
+            initialTab: _homeTabFromQuery(state.uri),
+          );
+        },
       ),
       GoRoute(
         path: '/now-playing',

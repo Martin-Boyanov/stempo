@@ -22,10 +22,37 @@ import 'library_page.dart';
 import 'playlist_page.dart';
 import 'search_page.dart';
 
-class HomePage extends StatefulWidget {
-  const HomePage({super.key, this.initialTab = 0});
+class HomeModesSnapshot {
+  const HomeModesSnapshot({
+    this.selectedPlaylistIds = const <String>{},
+    this.selectedModeIndex = 1,
+    this.currentStep = 0,
+  });
+
+  final Set<String> selectedPlaylistIds;
+  final int selectedModeIndex;
+  final int currentStep;
+}
+
+class HomePageArgs {
+  const HomePageArgs({
+    this.initialTab = 0,
+    this.modesSnapshot = const HomeModesSnapshot(),
+  });
 
   final int initialTab;
+  final HomeModesSnapshot modesSnapshot;
+}
+
+class HomePage extends StatefulWidget {
+  const HomePage({
+    super.key,
+    this.initialTab = 0,
+    this.initialModesSnapshot = const HomeModesSnapshot(),
+  });
+
+  final int initialTab;
+  final HomeModesSnapshot initialModesSnapshot;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -68,10 +95,15 @@ class _HomePageState extends State<HomePage>
   int _trackingSecondsRemaining = 20;
   int? _trackingInitialStepCount;
   Timer? _trackingTimer;
+  late HomeModesSnapshot _modesSnapshot;
 
   int _syncGap(int userCadence) {
     final trackBpm = _currentTrackBpm ?? _mockState.trackBpm;
     return (trackBpm - userCadence).abs();
+  }
+
+  void _updateModesSnapshot(HomeModesSnapshot snapshot) {
+    _modesSnapshot = snapshot;
   }
 
   void _openPlaylist(
@@ -409,6 +441,7 @@ class _HomePageState extends State<HomePage>
   void initState() {
     super.initState();
     _selectedTab = widget.initialTab.clamp(0, _tabs.length - 1);
+    _modesSnapshot = widget.initialModesSnapshot;
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2200),
@@ -636,6 +669,16 @@ class _HomePageState extends State<HomePage>
                               initialTrackBpm:
                                   _currentTrackBpm ?? _mockState.trackBpm,
                               userCadence: auth.userCadence,
+                              returnRoute: switch (_selectedTab) {
+                                1 => '/home?tab=search',
+                                2 => '/home?tab=library',
+                                3 => '/home?tab=modes',
+                                _ => '/home?tab=home',
+                              },
+                              returnExtra: HomePageArgs(
+                                initialTab: _selectedTab,
+                                modesSnapshot: _modesSnapshot,
+                              ),
                             ),
                           ),
                           const SizedBox(height: 8),
@@ -712,6 +755,8 @@ class _HomePageState extends State<HomePage>
       case 3:
         return _ModesTabView(
           playlists: playlists,
+          initialSnapshot: _modesSnapshot,
+          onStateChanged: _updateModesSnapshot,
           onOpenPlaylist: (playlist) =>
               _openPlaylist(playlist, sourceTab: PlaylistSourceTab.modes),
           onTrackStarted: _seedMiniNowPlaying,
@@ -878,11 +923,15 @@ class _HomeTabView extends StatelessWidget {
 class _ModesTabView extends StatefulWidget {
   const _ModesTabView({
     required this.playlists,
+    required this.initialSnapshot,
+    required this.onStateChanged,
     required this.onOpenPlaylist,
     required this.onTrackStarted,
   });
 
   final List<TempoPlaylist> playlists;
+  final HomeModesSnapshot initialSnapshot;
+  final ValueChanged<HomeModesSnapshot> onStateChanged;
   final ValueChanged<TempoPlaylist> onOpenPlaylist;
   final ValueChanged<SpotifyTrack> onTrackStarted;
 
@@ -893,13 +942,21 @@ class _ModesTabView extends StatefulWidget {
 class _ModesTabViewState extends State<_ModesTabView> {
   late final PageStorageBucket _pageStorageBucket;
   late final PageController _pageController;
-  _ModeOption _selectedMode = _modeOptions[1];
+  late _ModeOption _selectedMode;
+  late Set<String> _selectedPlaylistIds;
 
   @override
   void initState() {
     super.initState();
     _pageStorageBucket = PageStorageBucket();
-    _pageController = PageController();
+    final initialModeIndex = widget.initialSnapshot.selectedModeIndex.clamp(
+      0,
+      _modeOptions.length - 1,
+    );
+    _selectedMode = _modeOptions[initialModeIndex];
+    _selectedPlaylistIds = Set<String>.from(widget.initialSnapshot.selectedPlaylistIds);
+    _pageController = PageController(initialPage: widget.initialSnapshot.currentStep);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _emitSnapshot());
   }
 
   @override
@@ -908,60 +965,145 @@ class _ModesTabViewState extends State<_ModesTabView> {
     super.dispose();
   }
 
-  Future<void> _chooseMode(_ModeOption mode) async {
-    setState(() => _selectedMode = mode);
+  @override
+  void didUpdateWidget(covariant _ModesTabView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final nextAvailableIds = _initialSelectedPlaylistIds(widget.playlists);
+    final retainedIds = _selectedPlaylistIds
+        .where(nextAvailableIds.contains)
+        .toSet();
+    if (retainedIds.length != _selectedPlaylistIds.length) {
+      _selectedPlaylistIds = retainedIds;
+      _emitSnapshot();
+    }
+  }
+
+  void _emitSnapshot() {
+    final page = _pageController.hasClients
+        ? (_pageController.page?.round() ?? _pageController.initialPage)
+        : _pageController.initialPage;
+    widget.onStateChanged(
+      HomeModesSnapshot(
+        selectedPlaylistIds: Set<String>.from(_selectedPlaylistIds),
+        selectedModeIndex: _modeOptions.indexOf(_selectedMode),
+        currentStep: page,
+      ),
+    );
+  }
+
+  Set<String> _initialSelectedPlaylistIds(List<TempoPlaylist> playlists) => playlists
+      .where((playlist) => (playlist.spotifyUri ?? '').startsWith('spotify:playlist:'))
+      .map((playlist) => playlist.id)
+      .toSet();
+
+  Future<void> _goToModeChooser() async {
     await _pageController.animateToPage(
       1,
       duration: const Duration(milliseconds: 520),
       curve: Curves.easeInOutCubicEmphasized,
     );
+    _emitSnapshot();
   }
 
-  Future<void> _backToChooser() {
-    return _pageController.animateToPage(
+  Future<void> _chooseMode(_ModeOption mode) async {
+    setState(() => _selectedMode = mode);
+    await _pageController.animateToPage(
+      2,
+      duration: const Duration(milliseconds: 520),
+      curve: Curves.easeInOutCubicEmphasized,
+    );
+    _emitSnapshot();
+  }
+
+  Future<void> _backToPlaylistChooser() async {
+    await _pageController.animateToPage(
       0,
       duration: const Duration(milliseconds: 420),
       curve: Curves.easeInOutCubic,
     );
+    _emitSnapshot();
+  }
+
+  Future<void> _backToModeChooser() async {
+    await _pageController.animateToPage(
+      1,
+      duration: const Duration(milliseconds: 420),
+      curve: Curves.easeInOutCubic,
+    );
+    _emitSnapshot();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
+    final selectablePlaylists = widget.playlists
+        .where(
+          (playlist) => (playlist.spotifyUri ?? '').startsWith('spotify:playlist:'),
+        )
+        .toList(growable: false);
+    final selectedPlaylists = selectablePlaylists
+        .where((playlist) => _selectedPlaylistIds.contains(playlist.id))
+        .toList(growable: false);
+
+    return Column(
       children: [
-        PageStorage(
-          bucket: _pageStorageBucket,
-          child: PageView(
-            controller: _pageController,
-            physics: const NeverScrollableScrollPhysics(),
-            children: [
-              _ModesChooserScreen(
-                selectedMode: _selectedMode,
-                onChooseMode: _chooseMode,
-              ),
-              _ModesResultsScreen(
-                mode: _selectedMode,
-                playlists: widget.playlists,
-                onBack: _backToChooser,
-                onOpenPlaylist: widget.onOpenPlaylist,
-                onTrackStarted: widget.onTrackStarted,
-              ),
-            ],
+        Expanded(
+          child: PageStorage(
+            bucket: _pageStorageBucket,
+            child: PageView(
+              controller: _pageController,
+              physics: const NeverScrollableScrollPhysics(),
+              children: [
+                _ModesPlaylistChooserScreen(
+                  playlists: selectablePlaylists,
+                  selectedPlaylistIds: _selectedPlaylistIds,
+                  onTogglePlaylist: (playlist) {
+                    setState(() {
+                      if (_selectedPlaylistIds.contains(playlist.id)) {
+                        _selectedPlaylistIds.remove(playlist.id);
+                      } else {
+                        _selectedPlaylistIds.add(playlist.id);
+                      }
+                    });
+                    _emitSnapshot();
+                  },
+                  onSelectAll: () {
+                    setState(() {
+                      _selectedPlaylistIds = selectablePlaylists
+                          .map((playlist) => playlist.id)
+                          .toSet();
+                    });
+                    _emitSnapshot();
+                  },
+                  onContinue:
+                      selectedPlaylists.isEmpty ? null : _goToModeChooser,
+                ),
+                _ModesChooserScreen(
+                  selectedMode: _selectedMode,
+                  selectedPlaylists: selectedPlaylists,
+                  onBack: _backToPlaylistChooser,
+                  onChooseMode: _chooseMode,
+                ),
+                _ModesResultsScreen(
+                  mode: _selectedMode,
+                  playlists: selectedPlaylists,
+                  onBack: _backToModeChooser,
+                  onTrackStarted: widget.onTrackStarted,
+                ),
+              ],
+            ),
           ),
         ),
-        Positioned(
-          left: 0,
-          right: 0,
-          bottom: 152,
+        Padding(
+          padding: const EdgeInsets.only(top: 8, bottom: 140),
           child: Center(
             child: FrostedPanel(
               radius: 999,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               glowColor: AppColors.primary,
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  for (var i = 0; i < 2; i++) ...[
+                  for (var i = 0; i < 3; i++) ...[
                     AnimatedBuilder(
                       animation: _pageController,
                       builder: (context, _) {
@@ -969,7 +1111,7 @@ class _ModesTabViewState extends State<_ModesTabView> {
                             ? (_pageController.page ??
                                   _pageController.initialPage.toDouble())
                             : 0.0;
-                        final isActive = (page.round() == i);
+                        final isActive = page.round() == i;
                         return AnimatedContainer(
                           duration: const Duration(milliseconds: 220),
                           width: isActive ? 22 : 8,
@@ -983,7 +1125,7 @@ class _ModesTabViewState extends State<_ModesTabView> {
                         );
                       },
                     ),
-                    if (i != 1) const SizedBox(width: 8),
+                    if (i != 2) const SizedBox(width: 8),
                   ],
                 ],
               ),
@@ -998,22 +1140,26 @@ class _ModesTabViewState extends State<_ModesTabView> {
 class _ModesChooserScreen extends StatelessWidget {
   const _ModesChooserScreen({
     required this.selectedMode,
+    required this.selectedPlaylists,
+    required this.onBack,
     required this.onChooseMode,
   });
 
   final _ModeOption selectedMode;
+  final List<TempoPlaylist> selectedPlaylists;
+  final Future<void> Function() onBack;
   final ValueChanged<_ModeOption> onChooseMode;
 
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 188),
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           FrostedPanel(
-            radius: 34,
-            padding: const EdgeInsets.fromLTRB(26, 24, 26, 24),
+            radius: 30,
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
             elevated: true,
             glowColor: AppColors.primary,
             gradient: const LinearGradient(
@@ -1024,50 +1170,77 @@ class _ModesChooserScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: 68,
-                  height: 68,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: RadialGradient(
-                      colors: [
-                        AppColors.primaryBright.withValues(alpha: 0.78),
-                        AppColors.primary.withValues(alpha: 0.26),
-                        Colors.transparent,
-                      ],
+                Row(
+                  children: [
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => onBack(),
+                      child: Container(
+                        width: 42,
+                        height: 42,
+                        decoration: AppFx.glassDecoration(
+                          radius: 16,
+                          glowColor: AppColors.primary,
+                        ),
+                        child: const Icon(
+                          Icons.arrow_back_ios_new_rounded,
+                          color: AppColors.textPrimary,
+                          size: 18,
+                        ),
+                      ),
                     ),
-                  ),
-                  child: const Icon(
-                    Icons.directions_run_rounded,
-                    color: AppColors.textPrimary,
-                    size: 30,
-                  ),
+                    const Spacer(),
+                    Container(
+                      width: 54,
+                      height: 54,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: RadialGradient(
+                          colors: [
+                            AppColors.primaryBright.withValues(alpha: 0.78),
+                            AppColors.primary.withValues(alpha: 0.26),
+                            Colors.transparent,
+                          ],
+                        ),
+                      ),
+                      child: const Icon(
+                        Icons.directions_run_rounded,
+                        color: AppColors.textPrimary,
+                        size: 24,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 14),
                 const Text(
-                  'Modes',
+                  'Pick a mode',
                   style: TextStyle(
                     color: AppColors.textPrimary,
-                    fontSize: 34,
+                    fontSize: 28,
                     height: 0.96,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
                 const Text(
-                  'Choose how you are moving right now and we will only show playlists and tracks inside that BPM lane.',
+                  'Choose the BPM lane for the playlists you selected.',
                   style: TextStyle(
                     color: AppColors.textSecondary,
-                    fontSize: 14,
-                    height: 1.4,
+                    fontSize: 13,
+                    height: 1.3,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 12),
                 Wrap(
                   spacing: 10,
-                  runSpacing: 10,
+                  runSpacing: 8,
                   children: [
+                    _HeaderPill(
+                      label:
+                          '${selectedPlaylists.length} playlist${selectedPlaylists.length == 1 ? '' : 's'} chosen',
+                      accent: AppColors.primary,
+                    ),
                     _HeaderPill(
                       label: '${selectedMode.label} selected',
                       accent: selectedMode.accent,
@@ -1081,7 +1254,7 @@ class _ModesChooserScreen extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 14),
           for (var i = 0; i < _modeOptions.length; i++) ...[
             _ModeOptionCard(
               mode: _modeOptions[i],
@@ -1096,19 +1269,173 @@ class _ModesChooserScreen extends StatelessWidget {
   }
 }
 
+class _ModesPlaylistChooserScreen extends StatelessWidget {
+  const _ModesPlaylistChooserScreen({
+    required this.playlists,
+    required this.selectedPlaylistIds,
+    required this.onTogglePlaylist,
+    required this.onSelectAll,
+    required this.onContinue,
+  });
+
+  final List<TempoPlaylist> playlists;
+  final Set<String> selectedPlaylistIds;
+  final ValueChanged<TempoPlaylist> onTogglePlaylist;
+  final VoidCallback onSelectAll;
+  final Future<void> Function()? onContinue;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          FrostedPanel(
+            radius: 30,
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+            elevated: true,
+            glowColor: AppColors.primary,
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xB814221B), Color(0x8A111413), Color(0xCC080A09)],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 54,
+                  height: 54,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(
+                      colors: [
+                        AppColors.primaryBright.withValues(alpha: 0.78),
+                        AppColors.primary.withValues(alpha: 0.26),
+                        Colors.transparent,
+                      ],
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.library_music_rounded,
+                    color: AppColors.textPrimary,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                const Text(
+                  'Choose playlists',
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 28,
+                    height: 0.96,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Pick which playlists should contribute songs.',
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 13,
+                    height: 1.3,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 8,
+                  children: [
+                    _HeaderPill(
+                      label:
+                          '${selectedPlaylistIds.length} selected',
+                      accent: AppColors.primary,
+                    ),
+                    _HeaderPill(
+                      label: '${playlists.length} available',
+                      accent: AppColors.accent,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              const Text(
+                'Your playlists',
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              TextButton(
+                onPressed: playlists.isEmpty ? null : onSelectAll,
+                child: const Text('Select all'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (playlists.isEmpty)
+            const _InlineEmptyState(
+              title: 'No Spotify playlists available',
+              subtitle:
+                  'Connect Spotify playlists first and they will appear here for mode filtering.',
+            )
+          else
+            SizedBox(
+              height: 198,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: playlists.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 12),
+                itemBuilder: (context, index) {
+                  final playlist = playlists[index];
+                  return SizedBox(
+                    width: 152,
+                    child: _SelectableJumpBackCard(
+                      item: playlist,
+                      isSelected: selectedPlaylistIds.contains(playlist.id),
+                      onTap: () => onTogglePlaylist(playlist),
+                    ),
+                  );
+                },
+              ),
+            ),
+          const SizedBox(height: 18),
+          SizedBox(
+            width: double.infinity,
+            child: _ActionPillButton(
+              label: 'Continue To Modes',
+              icon: Icons.arrow_forward_rounded,
+              filled: true,
+              onTap: onContinue == null ? null : () => onContinue!(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ModesResultsScreen extends StatefulWidget {
   const _ModesResultsScreen({
     required this.mode,
     required this.playlists,
     required this.onBack,
-    required this.onOpenPlaylist,
     required this.onTrackStarted,
   });
 
   final _ModeOption mode;
   final List<TempoPlaylist> playlists;
   final Future<void> Function() onBack;
-  final ValueChanged<TempoPlaylist> onOpenPlaylist;
   final ValueChanged<SpotifyTrack> onTrackStarted;
 
   @override
@@ -1135,7 +1462,7 @@ class _ModesResultsScreenState extends State<_ModesResultsScreen>
   }
 
   String get _modeKey =>
-      '${widget.mode.label}|${widget.mode.minBpm}|${widget.mode.maxBpm ?? 999}';
+      '${widget.mode.label}|${widget.mode.minBpm}|${widget.mode.maxBpm ?? 999}|${widget.playlists.map((playlist) => playlist.id).join(',')}';
 
   String _playlistSignature(List<TempoPlaylist> playlists) => playlists
       .map((playlist) => '${playlist.id}:${playlist.spotifyUri ?? ''}')
@@ -1178,7 +1505,6 @@ class _ModesResultsScreenState extends State<_ModesResultsScreen>
       );
     }
 
-    final filteredPlaylists = cachedMode?.playlists ?? const <TempoPlaylist>[];
     final filteredTracks = cachedMode?.tracks ?? const <_ModeTrackEntry>[];
 
     return SingleChildScrollView(
@@ -1252,7 +1578,8 @@ class _ModesResultsScreenState extends State<_ModesResultsScreen>
                       accent: widget.mode.accent,
                     ),
                     _HeaderPill(
-                      label: '${filteredPlaylists.length} playlists',
+                      label:
+                          '${widget.playlists.length} source playlist${widget.playlists.length == 1 ? '' : 's'}',
                       accent: AppColors.primaryBright,
                     ),
                     _HeaderPill(
@@ -1266,37 +1593,15 @@ class _ModesResultsScreenState extends State<_ModesResultsScreen>
           ),
           const SizedBox(height: 18),
           _SectionLabel(
-            title: 'Playlists',
-            trailing: 'Filtered for ${widget.mode.rangeLabel}',
+            title: 'Tracks',
+            trailing: 'Ordered exactly like the created playlist',
           ),
-          const SizedBox(height: 12),
-          if (filteredPlaylists.isEmpty)
-            const _InlineEmptyState(
-              title: 'No playlists in this mode yet',
-              subtitle:
-                  'Only playlists where every song fits this BPM range will appear here.',
-            )
-          else
-            Column(
-              children: [
-                for (var i = 0; i < filteredPlaylists.length; i++) ...[
-                  _ModePlaylistCard(
-                    playlist: filteredPlaylists[i],
-                    mode: widget.mode,
-                    onTap: () => widget.onOpenPlaylist(filteredPlaylists[i]),
-                  ),
-                  if (i != filteredPlaylists.length - 1)
-                    const SizedBox(height: 12),
-                ],
-              ],
-            ),
-          const SizedBox(height: 18),
-          _SectionLabel(title: 'Tracks', trailing: 'Inside the same BPM lane'),
           const SizedBox(height: 12),
           if (filteredTracks.isEmpty)
             const _InlineEmptyState(
-              title: 'There are not tracks in that range',
-              subtitle: 'No real Spotify tracks matched this BPM lane.',
+              title: 'There are no tracks in that range',
+              subtitle:
+                  'None of the selected playlists had Spotify tracks inside this BPM lane.',
             )
           else
             Column(
@@ -1378,7 +1683,6 @@ class _ModesResultsScreenState extends State<_ModesResultsScreen>
     required SpotifyAuthController auth,
     required List<TempoPlaylist> playlists,
   }) {
-    final resolvedPlaylists = <TempoPlaylist>[];
     final entries = <_ModeTrackEntry>[];
     final seenTrackKeys = <String>{};
     for (final playlist in playlists) {
@@ -1392,37 +1696,6 @@ class _ModesResultsScreenState extends State<_ModesResultsScreen>
           .tracksForPlaylist(playlist.id)
           .where((track) => widget.mode.matches(track.bpm))
           .toList(growable: false);
-      final allTracksInRange =
-          inRangeTracks.isNotEmpty && inRangeTracks.length == allTracks.length;
-      if (allTracksInRange) {
-        final totalDurationMinutes =
-            (inRangeTracks.fold<int>(
-                      0,
-                      (sum, track) => sum + track.durationMs,
-                    ) /
-                    60000)
-                .round();
-        resolvedPlaylists.add(
-          TempoPlaylist(
-            id: playlist.id,
-            title: playlist.title,
-            subtitle: playlist.subtitle,
-            imageAsset: playlist.imageAsset,
-            spotifyUri: playlist.spotifyUri,
-            bpm: _averageBpm(inRangeTracks),
-            trackCount: inRangeTracks.length,
-            durationMinutes: totalDurationMinutes > 0
-                ? totalDurationMinutes
-                : playlist.durationMinutes,
-            category: playlist.category,
-            mood: playlist.mood,
-            colors: playlist.colors,
-            isPinned: playlist.isPinned,
-            wasRecentlyPlayed: playlist.wasRecentlyPlayed,
-          ),
-        );
-        continue;
-      }
       for (final track in inRangeTracks) {
         final trackKey = _modeTrackKey(track);
         if (!seenTrackKeys.add(trackKey)) continue;
@@ -1457,7 +1730,6 @@ class _ModesResultsScreenState extends State<_ModesResultsScreen>
         )
         .toList(growable: false);
     return _ModePreparedData(
-      playlists: resolvedPlaylists,
       tracks: entries,
       orderedSpotifyTracks: orderedSpotifyTracks,
     );
@@ -1570,12 +1842,10 @@ class _ModesResultsScreenState extends State<_ModesResultsScreen>
 
 class _ModePreparedData {
   const _ModePreparedData({
-    required this.playlists,
     required this.tracks,
     required this.orderedSpotifyTracks,
   });
 
-  final List<TempoPlaylist> playlists;
   final List<_ModeTrackEntry> tracks;
   final List<SpotifyTrack> orderedSpotifyTracks;
 }
@@ -1682,8 +1952,8 @@ class _ModeOptionCard extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: FrostedPanel(
-        radius: 28,
-        padding: const EdgeInsets.all(18),
+        radius: 24,
+        padding: const EdgeInsets.all(16),
         glowColor: mode.accent,
         elevated: true,
         gradient: LinearGradient(
@@ -1697,15 +1967,15 @@ class _ModeOptionCard extends StatelessWidget {
         child: Row(
           children: [
             Container(
-              width: 54,
-              height: 54,
+              width: 48,
+              height: 48,
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(18),
+                borderRadius: BorderRadius.circular(16),
                 color: mode.accent.withValues(alpha: 0.18),
               ),
-              child: Icon(mode.icon, color: mode.accent, size: 28),
+              child: Icon(mode.icon, color: mode.accent, size: 24),
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1714,119 +1984,39 @@ class _ModeOptionCard extends StatelessWidget {
                     mode.label,
                     style: const TextStyle(
                       color: AppColors.textPrimary,
-                      fontSize: 20,
+                      fontSize: 18,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 3),
                   Text(
                     mode.rangeLabel,
                     style: TextStyle(
                       color: mode.accent,
-                      fontSize: 12,
+                      fontSize: 11,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 5),
                   Text(
                     mode.description,
                     style: const TextStyle(
                       color: AppColors.textSecondary,
-                      fontSize: 13,
-                      height: 1.35,
+                      fontSize: 12,
+                      height: 1.25,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 8),
             Icon(
               isSelected
                   ? Icons.arrow_forward_rounded
                   : Icons.chevron_right_rounded,
               color: AppColors.textPrimary,
               size: 24,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ModePlaylistCard extends StatelessWidget {
-  const _ModePlaylistCard({
-    required this.playlist,
-    required this.mode,
-    required this.onTap,
-  });
-
-  final TempoPlaylist playlist;
-  final _ModeOption mode;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: FrostedPanel(
-        radius: 24,
-        padding: const EdgeInsets.all(14),
-        glowColor: mode.accent,
-        child: Row(
-          children: [
-            MediaCover(
-              imageAsset: playlist.imageAsset,
-              size: 72,
-              borderRadius: 18,
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    playlist.title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 18,
-                      height: 1.05,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    playlist.subtitle,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 12,
-                      height: 1.35,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _HeaderPill(
-                        label: '${playlist.bpm} BPM',
-                        accent: mode.accent,
-                      ),
-                      _HeaderPill(
-                        label: '${playlist.trackCount} tracks',
-                        accent: AppColors.primaryBright,
-                      ),
-                    ],
-                  ),
-                ],
-              ),
             ),
           ],
         ),
@@ -2285,12 +2475,15 @@ class _ActionPillButton extends StatelessWidget {
 
   final String label;
   final IconData icon;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final bool filled;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    final isEnabled = onTap != null;
+    return Opacity(
+      opacity: isEnabled ? 1 : 0.48,
+      child: GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Container(
@@ -2335,6 +2528,7 @@ class _ActionPillButton extends StatelessWidget {
             ),
           ],
         ),
+      ),
       ),
     );
   }
@@ -2702,19 +2896,25 @@ class _JumpBackCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    item.title,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 16,
-                      height: 1.15,
-                      fontWeight: FontWeight.w700,
+                  SizedBox(
+                    height: 62,
+                    child: Align(
+                      alignment: Alignment.topLeft,
+                      child: Text(
+                        item.title,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 16,
+                          height: 1.15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                     ),
                   ),
-                  if (isBpmPlaylist && bpmFooterText != null) ...[
-                    const Spacer(),
+                  const Spacer(),
+                  if (isBpmPlaylist && bpmFooterText != null)
                     Text(
                       bpmFooterText,
                       style: const TextStyle(
@@ -2723,13 +2923,67 @@ class _JumpBackCard extends StatelessWidget {
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                  ],
                 ],
               ),
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _SelectableJumpBackCard extends StatelessWidget {
+  const _SelectableJumpBackCard({
+    required this.item,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  final TempoPlaylist item;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        _JumpBackCard(item: item, onTap: onTap),
+        Positioned(
+          top: 10,
+          right: 10,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onTap,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isSelected
+                    ? AppColors.primaryBright
+                    : Colors.black.withValues(alpha: 0.42),
+                border: Border.all(
+                  color: isSelected
+                      ? AppColors.primary
+                      : Colors.white.withValues(alpha: 0.24),
+                ),
+                boxShadow: isSelected
+                    ? AppFx.softGlow(AppColors.primary, strength: 0.2)
+                    : null,
+              ),
+              child: Icon(
+                isSelected
+                    ? Icons.check_rounded
+                    : Icons.radio_button_unchecked_rounded,
+                size: 18,
+                color: isSelected ? Colors.black : AppColors.textPrimary,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
