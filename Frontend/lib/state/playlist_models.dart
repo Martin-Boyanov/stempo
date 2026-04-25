@@ -31,3 +31,22 @@ class TempoPlaylist {
   final bool isPinned;
   final bool wasRecentlyPlayed;
 }
+
+bool isGeneratedBpmPlaylistTitle(String title) {
+  final normalized = title.trim();
+  return RegExp(
+    r'\d{2,3}\s*-\s*\d{2,3}\s*bpm$',
+    caseSensitive: false,
+  ).hasMatch(normalized);
+}
+
+int? generatedBpmPlaylistMidpoint(String title) {
+  final match = RegExp(
+    r'(\d{2,3})\s*-\s*(\d{2,3})\s*bpm$',
+    caseSensitive: false,
+  ).firstMatch(title.trim());
+  final minBpm = int.tryParse(match?.group(1) ?? '');
+  final maxBpm = int.tryParse(match?.group(2) ?? '');
+  if (minBpm == null || maxBpm == null || minBpm > maxBpm) return null;
+  return (minBpm + maxBpm) ~/ 2;
+}

@@ -43,7 +43,11 @@ class _LibraryPageState extends State<LibraryPage> {
   List<TempoPlaylist> get _playlists => widget.playlists ?? const [];
 
   bool _isBpmSpecificPlaylist(TempoPlaylist playlist) {
-    return playlist.title.toLowerCase().contains('bpm');
+    return isGeneratedBpmPlaylistTitle(playlist.title);
+  }
+
+  int _effectivePlaylistBpm(TempoPlaylist playlist) {
+    return generatedBpmPlaylistMidpoint(playlist.title) ?? playlist.bpm;
   }
 
   List<TempoPlaylist> get _filteredPlaylists {
@@ -51,7 +55,8 @@ class _LibraryPageState extends State<LibraryPage> {
         .where((playlist) {
           if (_searchQuery.isNotEmpty) {
             final query = _searchQuery.toLowerCase();
-            final matches = playlist.title.toLowerCase().contains(query) ||
+            final matches =
+                playlist.title.toLowerCase().contains(query) ||
                 playlist.subtitle.toLowerCase().contains(query);
             if (!matches) return false;
           }
@@ -74,8 +79,8 @@ class _LibraryPageState extends State<LibraryPage> {
     items.sort((a, b) {
       final fitCompare = _fitRating(a).compareTo(_fitRating(b));
       if (fitCompare != 0) return fitCompare;
-      return (a.bpm - widget.userCadence).abs().compareTo(
-        (b.bpm - widget.userCadence).abs(),
+      return (_effectivePlaylistBpm(a) - widget.userCadence).abs().compareTo(
+        (_effectivePlaylistBpm(b) - widget.userCadence).abs(),
       );
     });
     return items;
@@ -85,9 +90,8 @@ class _LibraryPageState extends State<LibraryPage> {
       .where((playlist) => !_isBpmSpecificPlaylist(playlist))
       .toList(growable: false);
 
-  List<TempoPlaylist> get _bpmPlaylists => _filteredPlaylists
-      .where(_isBpmSpecificPlaylist)
-      .toList(growable: false);
+  List<TempoPlaylist> get _bpmPlaylists =>
+      _filteredPlaylists.where(_isBpmSpecificPlaylist).toList(growable: false);
 
   TempoPlaylist? get _heroPlaylist {
     if (_curatedPlaylists.isEmpty) return null;
@@ -159,7 +163,8 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   int _fitRating(TempoPlaylist playlist) {
-    final difference = (playlist.bpm - widget.userCadence).abs();
+    final difference = (_effectivePlaylistBpm(playlist) - widget.userCadence)
+        .abs();
     if (difference <= 3) return 0;
     if (difference <= 8) return 1;
     return 2;
@@ -313,7 +318,8 @@ class _LibraryPageState extends State<LibraryPage> {
               padding: EdgeInsets.symmetric(horizontal: 20),
               child: _LibraryEmptyState(
                 title: 'Your library is waiting',
-                message: 'Connect Spotify playlists to build your tempo library.',
+                message:
+                    'Connect Spotify playlists to build your tempo library.',
               ),
             ),
         ],
@@ -588,11 +594,7 @@ class _LibraryHeroCard extends StatelessWidget {
             child: isCompact
                 ? Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      cover,
-                      const SizedBox(height: 16),
-                      content,
-                    ],
+                    children: [cover, const SizedBox(height: 16), content],
                   )
                 : Row(
                     crossAxisAlignment: CrossAxisAlignment.start,

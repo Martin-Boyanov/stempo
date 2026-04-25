@@ -46,7 +46,10 @@ class _PlaylistPageState extends State<PlaylistPage> {
   late Color _secondaryColor;
   final ScrollController _scrollController = ScrollController();
 
-  int get _targetBpm => (_effectiveBpmRange.min + _effectiveBpmRange.max) ~/ 2;
+  bool get _isGeneratedBpmPlaylist =>
+      isGeneratedBpmPlaylistTitle(widget.args.playlist.title);
+
+  int get _targetBpm => AuthScope.read(context).userCadence;
 
   @override
   void initState() {
@@ -106,19 +109,21 @@ class _PlaylistPageState extends State<PlaylistPage> {
   }
 
   _BpmRange get _effectiveBpmRange {
-    final titleMatch = RegExp(
-      r'(\d{2,3})\s*-\s*(\d{2,3})\s*BPM$',
-      caseSensitive: false,
-    ).firstMatch(widget.args.playlist.title);
-    final minFromTitle = int.tryParse(titleMatch?.group(1) ?? '');
-    final maxFromTitle = int.tryParse(titleMatch?.group(2) ?? '');
-    if (minFromTitle != null &&
-        maxFromTitle != null &&
-        minFromTitle <= maxFromTitle) {
-      return _BpmRange(min: minFromTitle, max: maxFromTitle);
+    if (_isGeneratedBpmPlaylist) {
+      final rangeMatch = RegExp(
+        r'(\d{2,3})\s*-\s*(\d{2,3})\s*bpm$',
+        caseSensitive: false,
+      ).firstMatch(widget.args.playlist.title.trim());
+      final minFromTitle = int.tryParse(rangeMatch?.group(1) ?? '');
+      final maxFromTitle = int.tryParse(rangeMatch?.group(2) ?? '');
+      if (minFromTitle != null &&
+          maxFromTitle != null &&
+          minFromTitle <= maxFromTitle) {
+        return _BpmRange(min: minFromTitle, max: maxFromTitle);
+      }
     }
 
-    final targetBpm = widget.args.userCadence;
+    final targetBpm = _targetBpm;
     final tolerance = AuthScope.read(context).bpmTolerance;
     return _BpmRange(min: targetBpm - tolerance, max: targetBpm + tolerance);
   }
@@ -269,6 +274,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
 
       // Navigate to Now Playing
       final displayTrack = startTrack ?? tracks.first;
+      final currentCadence = auth.userCadence;
       context.push(
         '/now-playing',
         extra: NowPlayingPageArgs(
@@ -278,7 +284,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
               ? displayTrack.imageUrl
               : widget.args.playlist.imageAsset,
           trackBpm: displayTrack.bpm,
-          userCadence: widget.args.userCadence,
+          userCadence: currentCadence,
           spotifyUri: sessionPlaylistUri ?? displayTrack.spotifyUri,
           allowedTrackUris: tracks
               .map((t) => t.spotifyUri)
@@ -439,7 +445,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 8),
                         child: StempoNowPlayingBar(
-                          userCadence: widget.args.userCadence,
+                          userCadence: auth.userCadence,
                           allowedTrackUris: tracks
                               .map((track) => track.spotifyUri)
                               .where((uri) => uri.isNotEmpty)

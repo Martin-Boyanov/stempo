@@ -361,10 +361,10 @@ class _SearchPageState extends State<SearchPage> {
   void initState() {
     super.initState();
     _paceRange = widget.paceRange;
-    _manualTargetBpm =
-        ((widget.paceRange.start + widget.paceRange.end) / 2).toDouble();
-    _manualTolerance =
-        ((widget.paceRange.end - widget.paceRange.start) / 2).toDouble();
+    _manualTargetBpm = ((widget.paceRange.start + widget.paceRange.end) / 2)
+        .toDouble();
+    _manualTolerance = ((widget.paceRange.end - widget.paceRange.start) / 2)
+        .toDouble();
   }
 
   RangeValues _rangeFromTargetAndTolerance(double target, double tolerance) {
@@ -517,8 +517,9 @@ class _SearchPageState extends State<SearchPage> {
       subtitle: item.subtitle,
       imageAsset: item.imageAsset,
       bpm: item.bpm ?? widget.targetBpm,
-      trackCount:
-          item.durationMinutes > 0 ? (item.durationMinutes / 3).round() : 12,
+      trackCount: item.durationMinutes > 0
+          ? (item.durationMinutes / 3).round()
+          : 12,
       durationMinutes: item.durationMinutes,
       category: item.useCase,
       mood: item.mood,
@@ -602,235 +603,250 @@ class _SearchPageState extends State<SearchPage> {
                           ),
                         ),
                         const SizedBox(height: 16),
-                          _sheetLabel('Pace source'),
-                          const SizedBox(height: 8),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: [
-                              _sheetChip(
-                                label: 'Use current pace',
-                                selected:
-                                    paceFilterMode ==
-                                    _PaceFilterMode.currentPace,
-                                onTap: () {
-                                  setModalState(() {
-                                    paceFilterMode =
-                                        _PaceFilterMode.currentPace;
-                                    paceRange = widget.paceRange;
-                                  });
-                                },
-                              ),
-                              _sheetChip(
-                                label: 'Manual range',
-                                selected:
-                                    paceFilterMode ==
-                                    _PaceFilterMode.manualRange,
-                                onTap: () {
-                                  setModalState(() {
-                                    paceFilterMode =
-                                        _PaceFilterMode.manualRange;
-                                  });
-                                },
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                          _sheetLabel('Use case'),
-                          const SizedBox(height: 8),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: [
-                              for (final useCase in _useCases)
-                                _sheetChip(
-                                  label: useCase.title,
-                                  selected: selectedUseCase == useCase.title,
-                                  onTap: () {
+                        Expanded(
+                          child: SingleChildScrollView(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _sheetLabel('Pace source'),
+                                const SizedBox(height: 8),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    _sheetChip(
+                                      label: 'Use current pace',
+                                      selected:
+                                          paceFilterMode ==
+                                          _PaceFilterMode.currentPace,
+                                      onTap: () {
+                                        setModalState(() {
+                                          paceFilterMode =
+                                              _PaceFilterMode.currentPace;
+                                          paceRange = widget.paceRange;
+                                        });
+                                      },
+                                    ),
+                                    _sheetChip(
+                                      label: 'Manual range',
+                                      selected:
+                                          paceFilterMode ==
+                                          _PaceFilterMode.manualRange,
+                                      onTap: () {
+                                        setModalState(() {
+                                          paceFilterMode =
+                                              _PaceFilterMode.manualRange;
+                                        });
+                                      },
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 16),
+                                _sheetLabel('Use case'),
+                                const SizedBox(height: 8),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    for (final useCase in _useCases)
+                                      _sheetChip(
+                                        label: useCase.title,
+                                        selected:
+                                            selectedUseCase == useCase.title,
+                                        onTap: () {
+                                          setModalState(() {
+                                            selectedUseCase =
+                                                selectedUseCase == useCase.title
+                                                ? null
+                                                : useCase.title;
+                                          });
+                                        },
+                                      ),
+                                  ],
+                                ),
+                                const SizedBox(height: 16),
+                                _sheetLabel('Mood'),
+                                const SizedBox(height: 8),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    for (final mood in _moods)
+                                      _sheetChip(
+                                        label: mood,
+                                        selected: selectedMood == mood,
+                                        onTap: () {
+                                          setModalState(() {
+                                            selectedMood = selectedMood == mood
+                                                ? null
+                                                : mood;
+                                          });
+                                        },
+                                      ),
+                                  ],
+                                ),
+                                const SizedBox(height: 16),
+                                _sheetLabel('Duration'),
+                                const SizedBox(height: 8),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    for (final duration
+                                        in SearchDurationFilter.values)
+                                      _sheetChip(
+                                        label: duration.label,
+                                        selected: selectedDuration == duration,
+                                        onTap: () {
+                                          setModalState(() {
+                                            selectedDuration =
+                                                selectedDuration == duration
+                                                ? null
+                                                : duration;
+                                          });
+                                        },
+                                      ),
+                                  ],
+                                ),
+                                const SizedBox(height: 16),
+                                _sheetLabel('Pace range'),
+                                const SizedBox(height: 6),
+                                Text(
+                                  paceFilterMode == _PaceFilterMode.currentPace
+                                      ? 'Using your current pace: '
+                                            '${widget.paceRange.start.round()}-${widget.paceRange.end.round()} BPM'
+                                      : '${manualTargetBpm.round()} BPM (${paceRange.start.round()}-${paceRange.end.round()})',
+                                  style: const TextStyle(
+                                    color: AppColors.textPrimary,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                Slider(
+                                  value: manualTargetBpm,
+                                  min: 88,
+                                  max: 126,
+                                  divisions: 38,
+                                  activeColor: AppColors.primary,
+                                  inactiveColor: Colors.white.withValues(
+                                    alpha: 0.1,
+                                  ),
+                                  onChanged: (value) {
                                     setModalState(() {
-                                      selectedUseCase =
-                                          selectedUseCase == useCase.title
-                                          ? null
-                                          : useCase.title;
+                                      paceFilterMode =
+                                          _PaceFilterMode.manualRange;
+                                      manualTargetBpm = value;
+                                      paceRange = _rangeFromTargetAndTolerance(
+                                        manualTargetBpm,
+                                        manualTolerance,
+                                      );
                                     });
                                   },
                                 ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                          _sheetLabel('Mood'),
-                          const SizedBox(height: 8),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: [
-                              for (final mood in _moods)
-                                _sheetChip(
-                                  label: mood,
-                                  selected: selectedMood == mood,
-                                  onTap: () {
-                                    setModalState(() {
-                                      selectedMood = selectedMood == mood
-                                          ? null
-                                          : mood;
-                                    });
-                                  },
-                                ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                          _sheetLabel('Duration'),
-                          const SizedBox(height: 8),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: [
-                              for (final duration
-                                  in SearchDurationFilter.values)
-                                _sheetChip(
-                                  label: duration.label,
-                                  selected: selectedDuration == duration,
-                                  onTap: () {
-                                    setModalState(() {
-                                      selectedDuration =
-                                          selectedDuration == duration
-                                          ? null
-                                          : duration;
-                                    });
-                                  },
-                                ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                          _sheetLabel('Pace range'),
-                          const SizedBox(height: 6),
-                          Text(
-                            paceFilterMode == _PaceFilterMode.currentPace
-                                ? 'Using your current pace: '
-                                      '${widget.paceRange.start.round()}-${widget.paceRange.end.round()} BPM'
-                                : '${manualTargetBpm.round()} BPM (${paceRange.start.round()}-${paceRange.end.round()})',
-                            style: const TextStyle(
-                              color: AppColors.textPrimary,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          Slider(
-                            value: manualTargetBpm,
-                            min: 88,
-                            max: 126,
-                            divisions: 38,
-                            activeColor: AppColors.primary,
-                            inactiveColor: Colors.white.withValues(alpha: 0.1),
-                            onChanged: (value) {
-                              setModalState(() {
-                                paceFilterMode = _PaceFilterMode.manualRange;
-                                manualTargetBpm = value;
-                                paceRange = _rangeFromTargetAndTolerance(
-                                  manualTargetBpm,
-                                  manualTolerance,
-                                );
-                              });
-                            },
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Tolerance: +/- ${manualTolerance.round()} BPM',
-                            style: const TextStyle(
-                              color: AppColors.textSecondary,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          Slider(
-                            value: manualTolerance,
-                            min: 4,
-                            max: 18,
-                            divisions: 14,
-                            activeColor: AppColors.warning,
-                            inactiveColor: Colors.white.withValues(alpha: 0.1),
-                            onChanged: (value) {
-                              setModalState(() {
-                                paceFilterMode = _PaceFilterMode.manualRange;
-                                manualTolerance = value;
-                                paceRange = _rangeFromTargetAndTolerance(
-                                  manualTargetBpm,
-                                  manualTolerance,
-                                );
-                              });
-                            },
-                          ),
-                          const SizedBox(height: 4),
-                          Row(
-                            children: [
-                              TextButton(
-                                onPressed: () {
-                                  setModalState(() {
-                                    paceFilterMode =
-                                        _PaceFilterMode.currentPace;
-                                    selectedUseCase = null;
-                                    selectedMood = null;
-                                    selectedDuration = null;
-                                    paceRange = widget.paceRange;
-                                    manualTargetBpm =
-                                        ((widget.paceRange.start +
-                                                    widget.paceRange.end) /
-                                                2)
-                                            .toDouble();
-                                    manualTolerance =
-                                        ((widget.paceRange.end -
-                                                    widget.paceRange.start) /
-                                                2)
-                                            .toDouble();
-                                  });
-                                },
-                                child: const Text(
-                                  'Clear all',
-                                  style: TextStyle(
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Tolerance: +/- ${manualTolerance.round()} BPM',
+                                  style: const TextStyle(
                                     color: AppColors.textSecondary,
-                                    fontSize: 14,
+                                    fontSize: 13,
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
+                                Slider(
+                                  value: manualTolerance,
+                                  min: 4,
+                                  max: 18,
+                                  divisions: 14,
+                                  activeColor: AppColors.warning,
+                                  inactiveColor: Colors.white.withValues(
+                                    alpha: 0.1,
+                                  ),
+                                  onChanged: (value) {
+                                    setModalState(() {
+                                      paceFilterMode =
+                                          _PaceFilterMode.manualRange;
+                                      manualTolerance = value;
+                                      paceRange = _rangeFromTargetAndTolerance(
+                                        manualTargetBpm,
+                                        manualTolerance,
+                                      );
+                                    });
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            TextButton(
+                              onPressed: () {
+                                setModalState(() {
+                                  paceFilterMode = _PaceFilterMode.currentPace;
+                                  selectedUseCase = null;
+                                  selectedMood = null;
+                                  selectedDuration = null;
+                                  paceRange = widget.paceRange;
+                                  manualTargetBpm =
+                                      ((widget.paceRange.start +
+                                                  widget.paceRange.end) /
+                                              2)
+                                          .toDouble();
+                                  manualTolerance =
+                                      ((widget.paceRange.end -
+                                                  widget.paceRange.start) /
+                                              2)
+                                          .toDouble();
+                                });
+                              },
+                              child: const Text(
+                                'Clear all',
+                                style: TextStyle(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: SizedBox(
-                                  height: 48,
-                                  child: ElevatedButton(
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: AppColors.primary,
-                                      foregroundColor: AppColors.background,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(16),
-                                      ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: SizedBox(
+                                height: 48,
+                                child: ElevatedButton(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppColors.primary,
+                                    foregroundColor: AppColors.background,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16),
                                     ),
-                                    onPressed: () {
-                                      setState(() {
-                                        _paceFilterMode = paceFilterMode;
-                                        _selectedUseCase = selectedUseCase;
-                                        _selectedMood = selectedMood;
-                                        _selectedDuration = selectedDuration;
-                                        _paceRange = paceRange;
-                                        _manualTargetBpm = manualTargetBpm;
-                                        _manualTolerance = manualTolerance;
-                                      });
-                                      Navigator.of(context).pop();
-                                    },
-                                    child: const Text(
-                                      'Apply filters',
-                                      style: TextStyle(
-                                        color: AppColors.textPrimary,
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w700,
-                                      ),
+                                  ),
+                                  onPressed: () {
+                                    setState(() {
+                                      _paceFilterMode = paceFilterMode;
+                                      _selectedUseCase = selectedUseCase;
+                                      _selectedMood = selectedMood;
+                                      _selectedDuration = selectedDuration;
+                                      _paceRange = paceRange;
+                                      _manualTargetBpm = manualTargetBpm;
+                                      _manualTolerance = manualTolerance;
+                                    });
+                                    Navigator.of(context).pop();
+                                  },
+                                  child: const Text(
+                                    'Apply filters',
+                                    style: TextStyle(
+                                      color: AppColors.textPrimary,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700,
                                     ),
                                   ),
                                 ),
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
+                        ),
                       ],
                     ),
                   ),
@@ -873,21 +889,21 @@ class _SearchPageState extends State<SearchPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _buildSearchBar(),
-          const SizedBox(height: 20),
-          if (_showingResults)
-            _buildResultsView(
-              filteredItems: filteredItems,
-              hasTopResult: hasTopResult,
-              topResult: topResult,
-              playlists: playlists,
-              tracks: tracks,
-              artists: artists,
-            )
-          else
-            _buildBrowseView(filteredItems),
-        ],
+            const SizedBox(height: 20),
+            if (_showingResults)
+              _buildResultsView(
+                filteredItems: filteredItems,
+                hasTopResult: hasTopResult,
+                topResult: topResult,
+                playlists: playlists,
+                tracks: tracks,
+                artists: artists,
+              )
+            else
+              _buildBrowseView(filteredItems),
+          ],
+        ),
       ),
-    ),
     );
   }
 
