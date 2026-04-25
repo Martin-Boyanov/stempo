@@ -13,6 +13,7 @@ import '../services/step_service.dart';
 import '../state/auth_providers.dart';
 import '../state/mock_playlists.dart';
 import '../state/playlist_models.dart';
+import '../state/spotify_models.dart';
 import '../ui/theme/app_fx.dart';
 import '../ui/theme/colors.dart';
 import '../ui/widgets/loader.dart';
@@ -82,6 +83,22 @@ class _HomePageState extends State<HomePage>
         sourceTab: sourceTab,
       ),
     );
+  }
+
+  void _seedMiniNowPlaying(SpotifyTrack track) {
+    setState(() {
+      _playerState = SpotifyRemotePlayerState(
+        trackUri: track.spotifyUri,
+        trackName: track.title,
+        artistName: track.artistLine,
+        isPaused: false,
+        playbackPositionMs: 0,
+        durationMs: track.durationMs,
+        imageUri: track.imageUrl,
+      );
+      _currentTrackBpm = track.bpm;
+      _currentTrackBpmUri = track.spotifyUri;
+    });
   }
 
   void _goToLibraryTab() => setState(() => _selectedTab = 2);
@@ -469,11 +486,9 @@ class _HomePageState extends State<HomePage>
       case 3:
         return _ModesTabView(
           playlists: playlists,
-          catalogEntries: auth.searchEntries
-              .map(SearchCatalogEntry.fromSpotify)
-              .toList(growable: false),
           onOpenPlaylist: (playlist) =>
               _openPlaylist(playlist, sourceTab: PlaylistSourceTab.modes),
+          onTrackStarted: _seedMiniNowPlaying,
         );
       default:
         return _HomeTabView(
@@ -621,25 +636,27 @@ class _HomeTabView extends StatelessWidget {
 class _ModesTabView extends StatefulWidget {
   const _ModesTabView({
     required this.playlists,
-    required this.catalogEntries,
     required this.onOpenPlaylist,
+    required this.onTrackStarted,
   });
 
   final List<TempoPlaylist> playlists;
-  final List<SearchCatalogEntry> catalogEntries;
   final ValueChanged<TempoPlaylist> onOpenPlaylist;
+  final ValueChanged<SpotifyTrack> onTrackStarted;
 
   @override
   State<_ModesTabView> createState() => _ModesTabViewState();
 }
 
 class _ModesTabViewState extends State<_ModesTabView> {
+  late final PageStorageBucket _pageStorageBucket;
   late final PageController _pageController;
   _ModeOption _selectedMode = _modeOptions[1];
 
   @override
   void initState() {
     super.initState();
+    _pageStorageBucket = PageStorageBucket();
     _pageController = PageController();
   }
 
@@ -670,22 +687,25 @@ class _ModesTabViewState extends State<_ModesTabView> {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        PageView(
-          controller: _pageController,
-          physics: const NeverScrollableScrollPhysics(),
-          children: [
-            _ModesChooserScreen(
-              selectedMode: _selectedMode,
-              onChooseMode: _chooseMode,
-            ),
-            _ModesResultsScreen(
-              mode: _selectedMode,
-              playlists: widget.playlists,
-              catalogEntries: widget.catalogEntries,
-              onBack: _backToChooser,
-              onOpenPlaylist: widget.onOpenPlaylist,
-            ),
-          ],
+        PageStorage(
+          bucket: _pageStorageBucket,
+          child: PageView(
+            controller: _pageController,
+            physics: const NeverScrollableScrollPhysics(),
+            children: [
+              _ModesChooserScreen(
+                selectedMode: _selectedMode,
+                onChooseMode: _chooseMode,
+              ),
+              _ModesResultsScreen(
+                mode: _selectedMode,
+                playlists: widget.playlists,
+                onBack: _backToChooser,
+                onOpenPlaylist: widget.onOpenPlaylist,
+                onTrackStarted: widget.onTrackStarted,
+              ),
+            ],
+          ),
         ),
         Positioned(
           left: 0,
@@ -834,51 +854,239 @@ class _ModesChooserScreen extends StatelessWidget {
   }
 }
 
-class _ModesResultsScreen extends StatelessWidget {
+class _ModesResultsScreen extends StatefulWidget {
   const _ModesResultsScreen({
     required this.mode,
     required this.playlists,
-    required this.catalogEntries,
     required this.onBack,
     required this.onOpenPlaylist,
+    required this.onTrackStarted,
   });
 
   final _ModeOption mode;
   final List<TempoPlaylist> playlists;
-  final List<SearchCatalogEntry> catalogEntries;
   final Future<void> Function() onBack;
   final ValueChanged<TempoPlaylist> onOpenPlaylist;
+  final ValueChanged<SpotifyTrack> onTrackStarted;
 
-  List<TempoPlaylist> get _filteredPlaylists => playlists
-      .where((playlist) => mode.matches(playlist.bpm))
-      .toList(growable: false);
+  @override
+  State<_ModesResultsScreen> createState() => _ModesResultsScreenState();
+}
 
-  List<_ModeTrackEntry> get _filteredTracks {
-    final liveTracks = catalogEntries
-        .where((entry) => entry.type == SearchResultType.track)
-        .where((entry) => entry.bpm != null && mode.matches(entry.bpm!))
-        .map(
-          (entry) => _ModeTrackEntry(
-            title: entry.title,
-            artist: entry.subtitle,
-            bpm: entry.bpm ?? 0,
-            imageAsset: entry.imageUrl,
-            mood: entry.mood,
-          ),
+class _ModesResultsScreenState extends State<_ModesResultsScreen>
+    with AutomaticKeepAliveClientMixin<_ModesResultsScreen> {
+  static const int _initialModePageSize = 12;
+  static const int _initialVisiblePlaylists = 3;
+  static const int _initialVisibleTracks = 12;
+  static const int _playlistRevealStep = 3;
+  static const int _trackRevealStep = 12;
+  late final ScrollController _scrollController;
+  bool _isLaunchingTrack = false;
+  bool _isPreparingMode = false;
+  bool _isLoadingMoreModePlaylists = false;
+  bool _isLoadingMoreModeTracks = false;
+  String? _preparedModeKey;
+  int _visiblePlaylistCount = _initialVisiblePlaylists;
+  int _visibleTrackCount = _initialVisibleTracks;
+  List<String> _playlistSectionPlaylistIds = const [];
+  List<String> _trackSectionPlaylistIds = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController = ScrollController()..addListener(_handleScroll);
+    _resetModeSectionState();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_handleScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ModesResultsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_modeKey != _preparedModeKey) {
+      _preparedModeKey = null;
+      _resetModeSectionState();
+    }
+  }
+
+  String get _modeKey =>
+      '${widget.mode.label}|${widget.mode.minBpm}|${widget.mode.maxBpm ?? 999}';
+
+  void _resetModeSectionState() {
+    final candidatePlaylists = widget.playlists
+        .where(
+          (playlist) => (playlist.spotifyUri ?? '').startsWith('spotify:playlist:'),
         )
         .toList(growable: false);
-    if (liveTracks.isNotEmpty) return liveTracks;
-    return _fallbackModeTracks
-        .where((track) => mode.matches(track.bpm))
+    final initialIds = candidatePlaylists
+        .take(_initialVisiblePlaylists)
+        .map((playlist) => playlist.id)
         .toList(growable: false);
+    _visiblePlaylistCount = _initialVisiblePlaylists;
+    _visibleTrackCount = _initialVisibleTracks;
+    _playlistSectionPlaylistIds = initialIds;
+    _trackSectionPlaylistIds = initialIds;
   }
 
   @override
   Widget build(BuildContext context) {
-    final filteredPlaylists = _filteredPlaylists;
-    final filteredTracks = _filteredTracks;
+    super.build(context);
+    final auth = AuthScope.watch(context);
+    final mode = widget.mode;
+    final candidatePlaylists = widget.playlists
+        .where(
+          (playlist) => (playlist.spotifyUri ?? '').startsWith('spotify:playlist:'),
+        )
+        .toList(growable: false);
+    final isPriming = candidatePlaylists.any(
+      (playlist) => auth.isLoadingTracksForPlaylist(playlist.id),
+    );
+
+    final initialPlaylists = candidatePlaylists
+        .take(_initialVisiblePlaylists)
+        .toList(growable: false);
+
+    if (initialPlaylists.isNotEmpty &&
+        _preparedModeKey != _modeKey &&
+        !_isPreparingMode &&
+        !isPriming) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!context.mounted) return;
+        unawaited(_primeModeData(context, initialPlaylists));
+      });
+    }
+
+    if (initialPlaylists.isNotEmpty &&
+        (_preparedModeKey != _modeKey || _isPreparingMode)) {
+      return WalkingLoadingScreen(
+        title: mode.label,
+        subtitle: 'Loading the first playlists for ${mode.rangeLabel}.',
+        accent: mode.accent,
+        secondaryAccent: AppColors.primary,
+      );
+    }
+
+    final playlistSectionIds = _playlistSectionPlaylistIds.toSet();
+    final trackSectionIds = _trackSectionPlaylistIds.toSet();
+    final filteredPlaylists = <TempoPlaylist>[];
+    final filteredTracks = <_ModeTrackEntry>[];
+    final seenTrackKeys = <String>{};
+
+    for (final playlist in candidatePlaylists) {
+      final allTracks = auth.allTracksForPlaylist(playlist.id);
+      if (allTracks.isEmpty) {
+        continue;
+      }
+
+      final inRangeTracks = auth.tracksForPlaylist(playlist.id)
+          .where((track) => mode.matches(track.bpm))
+          .toList(growable: false);
+      final playlistFullyEvaluated = !auth.hasMoreTracksForPlaylist(
+        playlist.id,
+      );
+      final allTracksInRange =
+          playlistFullyEvaluated &&
+          inRangeTracks.isNotEmpty &&
+          inRangeTracks.length == allTracks.length;
+
+      if (allTracksInRange && playlistSectionIds.contains(playlist.id)) {
+        final totalDurationMinutes =
+            (inRangeTracks.fold<int>(
+                  0,
+                  (sum, track) => sum + track.durationMs,
+                ) /
+                60000)
+            .round();
+        filteredPlaylists.add(
+          TempoPlaylist(
+            id: playlist.id,
+            title: playlist.title,
+            subtitle: playlist.subtitle,
+            imageAsset: playlist.imageAsset,
+            spotifyUri: playlist.spotifyUri,
+            bpm: _averageBpm(inRangeTracks),
+            trackCount: inRangeTracks.length,
+            durationMinutes: totalDurationMinutes > 0
+                ? totalDurationMinutes
+                : playlist.durationMinutes,
+            category: playlist.category,
+            mood: playlist.mood,
+            colors: playlist.colors,
+            isPinned: playlist.isPinned,
+            wasRecentlyPlayed: playlist.wasRecentlyPlayed,
+          ),
+        );
+        continue;
+      }
+
+      if (!playlistFullyEvaluated) {
+        continue;
+      }
+
+      if (!trackSectionIds.contains(playlist.id)) {
+        continue;
+      }
+
+      for (final track in inRangeTracks) {
+        final trackKey = _modeTrackKey(track);
+        if (!seenTrackKeys.add(trackKey)) {
+          continue;
+        }
+        filteredTracks.add(
+          _ModeTrackEntry(
+            id: track.id,
+            title: track.title,
+            artist: track.artistLine,
+            bpm: track.bpm,
+            imageAsset: track.imageUrl,
+            mood: playlist.mood,
+            spotifyUri: track.spotifyUri,
+            durationMs: track.durationMs,
+          ),
+        );
+      }
+    }
+
+    filteredTracks.sort((a, b) {
+      final bpmCompare = a.bpm.compareTo(b.bpm);
+      if (bpmCompare != 0) return bpmCompare;
+      return a.title.compareTo(b.title);
+    });
+
+    final visiblePlaylists = filteredPlaylists
+        .take(_visiblePlaylistCount)
+        .toList(growable: false);
+    final visibleTracks = filteredTracks
+        .take(_visibleTrackCount)
+        .toList(growable: false);
+    final hiddenPlaylistCount =
+        filteredPlaylists.length - visiblePlaylists.length;
+    final hiddenTrackCount = filteredTracks.length - visibleTracks.length;
+    final hasUnloadedPlaylists = candidatePlaylists.any(
+      (playlist) =>
+          !playlistSectionIds.contains(playlist.id) &&
+          !auth.isLoadingTracksForPlaylist(playlist.id),
+    );
+    final hasUnloadedTracks = candidatePlaylists.any(
+      (playlist) =>
+          trackSectionIds.contains(playlist.id) &&
+          (auth.allTracksForPlaylist(playlist.id).isEmpty ||
+              auth.hasMoreTracksForPlaylist(playlist.id) ||
+              auth.isLoadingTracksForPlaylist(playlist.id)),
+    ) ||
+        candidatePlaylists.any(
+          (playlist) =>
+              !trackSectionIds.contains(playlist.id) &&
+              !auth.isLoadingTracksForPlaylist(playlist.id),
+        );
 
     return SingleChildScrollView(
+      controller: _scrollController,
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 188),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -895,7 +1103,7 @@ class _ModesResultsScreen extends StatelessWidget {
                   children: [
                     GestureDetector(
                       behavior: HitTestBehavior.opaque,
-                      onTap: () => onBack(),
+                      onTap: () => widget.onBack(),
                       child: Container(
                         width: 42,
                         height: 42,
@@ -916,7 +1124,7 @@ class _ModesResultsScreen extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            mode.label,
+                            widget.mode.label,
                             style: const TextStyle(
                               color: AppColors.textPrimary,
                               fontSize: 28,
@@ -926,7 +1134,7 @@ class _ModesResultsScreen extends StatelessWidget {
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            mode.description,
+                            widget.mode.description,
                             style: const TextStyle(
                               color: AppColors.textSecondary,
                               fontSize: 13,
@@ -944,7 +1152,10 @@ class _ModesResultsScreen extends StatelessWidget {
                   spacing: 10,
                   runSpacing: 10,
                   children: [
-                    _HeaderPill(label: mode.rangeLabel, accent: mode.accent),
+                    _HeaderPill(
+                      label: widget.mode.rangeLabel,
+                      accent: widget.mode.accent,
+                    ),
                     _HeaderPill(
                       label: '${filteredPlaylists.length} playlists',
                       accent: AppColors.primaryBright,
@@ -961,48 +1172,399 @@ class _ModesResultsScreen extends StatelessWidget {
           const SizedBox(height: 18),
           _SectionLabel(
             title: 'Playlists',
-            trailing: 'Filtered for ${mode.rangeLabel}',
+            trailing: 'Filtered for ${widget.mode.rangeLabel}',
           ),
           const SizedBox(height: 12),
           if (filteredPlaylists.isEmpty)
             const _InlineEmptyState(
               title: 'No playlists in this mode yet',
-              subtitle: 'Try another mode or connect more Spotify playlists.',
+              subtitle:
+                  'Only playlists where every song fits this BPM range will appear here.',
             )
           else
             Column(
               children: [
-                for (var i = 0; i < filteredPlaylists.length; i++) ...[
+                for (var i = 0; i < visiblePlaylists.length; i++) ...[
                   _ModePlaylistCard(
-                    playlist: filteredPlaylists[i],
-                    mode: mode,
-                    onTap: () => onOpenPlaylist(filteredPlaylists[i]),
+                    playlist: visiblePlaylists[i],
+                    mode: widget.mode,
+                    onTap: () => widget.onOpenPlaylist(visiblePlaylists[i]),
                   ),
-                  if (i != filteredPlaylists.length - 1)
+                  if (i != visiblePlaylists.length - 1)
                     const SizedBox(height: 12),
                 ],
               ],
             ),
+          if (hiddenPlaylistCount > 0 || hasUnloadedPlaylists) ...[
+            const SizedBox(height: 12),
+            _ModeShowMoreButton(
+              label: _isLoadingMoreModePlaylists
+                  ? 'Loading more playlists...'
+                  : hiddenPlaylistCount > 0
+                  ? 'Show more playlists ($hiddenPlaylistCount more)'
+                  : 'Show more playlists',
+              onTap: _isLoadingMoreModePlaylists
+                  ? null
+                  : () => unawaited(_loadMoreModePlaylists()),
+            ),
+          ],
           const SizedBox(height: 18),
           _SectionLabel(title: 'Tracks', trailing: 'Inside the same BPM lane'),
           const SizedBox(height: 12),
           if (filteredTracks.isEmpty)
             const _InlineEmptyState(
-              title: 'No track previews here yet',
-              subtitle:
-                  'Load more playlists and this mode will fill in with songs too.',
+              title: 'There are not tracks in that range',
+              subtitle: 'No real Spotify tracks matched this BPM lane.',
             )
           else
             Column(
               children: [
-                for (var i = 0; i < filteredTracks.length; i++) ...[
-                  _ModeTrackCard(track: filteredTracks[i], accent: mode.accent),
-                  if (i != filteredTracks.length - 1)
+                for (var i = 0; i < visibleTracks.length; i++) ...[
+                  _ModeTrackCard(
+                    track: visibleTracks[i],
+                    accent: widget.mode.accent,
+                    isLaunching: _isLaunchingTrack,
+                    onPlay: () => _playModeTrack(filteredTracks, visibleTracks[i]),
+                  ),
+                  if (i != visibleTracks.length - 1)
                     const SizedBox(height: 10),
                 ],
               ],
             ),
+          if (hiddenTrackCount > 0 ||
+              hasUnloadedTracks ||
+              (filteredTracks.isNotEmpty && visibleTracks.isNotEmpty)) ...[
+            const SizedBox(height: 12),
+            _ModeShowMoreButton(
+              label: _isLoadingMoreModeTracks
+                  ? 'Loading more tracks...'
+                  : hiddenTrackCount > 0
+                  ? 'Show more tracks ($hiddenTrackCount more)'
+                  : 'Show more tracks',
+              onTap: _isLoadingMoreModeTracks
+                  ? null
+                  : () => unawaited(_loadMoreModeTracks()),
+            ),
+          ],
         ],
+      ),
+    );
+  }
+
+  Future<void> _primeModeData(
+    BuildContext context,
+    List<TempoPlaylist> playlists,
+  ) async {
+    if (_isPreparingMode) return;
+    setState(() => _isPreparingMode = true);
+    final auth = AuthScope.read(context);
+    try {
+      for (final playlist in playlists) {
+        if (!context.mounted) return;
+        await auth.ensureAllTracksLoadedForPlaylist(
+          playlist.id,
+          minBpm: widget.mode.minBpm,
+          maxBpm: widget.mode.maxBpm ?? 999,
+        );
+      }
+      if (!mounted) return;
+      setState(() => _preparedModeKey = _modeKey);
+    } finally {
+      if (mounted) {
+        setState(() => _isPreparingMode = false);
+      }
+    }
+  }
+
+  void _handleScroll() {}
+
+  Future<void> _loadMoreModePlaylists() async {
+    if (_isLoadingMoreModePlaylists) return;
+    setState(() => _isLoadingMoreModePlaylists = true);
+    final auth = AuthScope.read(context);
+    final playlists = widget.playlists
+        .where(
+          (playlist) => (playlist.spotifyUri ?? '').startsWith('spotify:playlist:'),
+        )
+        .toList(growable: false);
+    try {
+      final beforeCount = _countQualifiedModePlaylists(
+        auth,
+        playlists.where((playlist) => _playlistSectionPlaylistIds.contains(playlist.id)).toList(growable: false),
+      );
+      for (final playlist in playlists) {
+        if (_playlistSectionPlaylistIds.contains(playlist.id)) continue;
+        if (auth.isLoadingTracksForPlaylist(playlist.id)) continue;
+        final allTracks = auth.allTracksForPlaylist(playlist.id);
+        if (allTracks.isEmpty || auth.hasMoreTracksForPlaylist(playlist.id)) {
+          await auth.ensureAllTracksLoadedForPlaylist(
+            playlist.id,
+            minBpm: widget.mode.minBpm,
+            maxBpm: widget.mode.maxBpm ?? 999,
+          );
+          if (!mounted) return;
+          setState(() {
+            _playlistSectionPlaylistIds = [
+              ..._playlistSectionPlaylistIds,
+              playlist.id,
+            ];
+          });
+          final afterCount = _countQualifiedModePlaylists(
+            auth,
+            playlists
+                .where((item) => _playlistSectionPlaylistIds.contains(item.id))
+                .toList(growable: false),
+          );
+          if (afterCount > beforeCount) {
+            break;
+          }
+        }
+      }
+      if (!mounted) return;
+      setState(() {
+        _visiblePlaylistCount += _playlistRevealStep;
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingMoreModePlaylists = false);
+      }
+    }
+  }
+
+  Future<void> _loadMoreModeTracks() async {
+    if (_isLoadingMoreModeTracks) return;
+    setState(() => _isLoadingMoreModeTracks = true);
+    final auth = AuthScope.read(context);
+    final playlists = widget.playlists
+        .where(
+          (playlist) => (playlist.spotifyUri ?? '').startsWith('spotify:playlist:'),
+        )
+        .toList(growable: false);
+    try {
+      var loadedMore = false;
+      for (final playlist in playlists) {
+        if (!_trackSectionPlaylistIds.contains(playlist.id)) {
+          await auth.loadTracksForPlaylist(
+            playlist.id,
+            minBpm: widget.mode.minBpm,
+            maxBpm: widget.mode.maxBpm ?? 999,
+            pageSize: _initialModePageSize,
+          );
+          if (!mounted) return;
+          setState(() {
+            _trackSectionPlaylistIds = [..._trackSectionPlaylistIds, playlist.id];
+          });
+          loadedMore = true;
+          break;
+        }
+        if (auth.isLoadingTracksForPlaylist(playlist.id)) continue;
+        if (!auth.hasMoreTracksForPlaylist(playlist.id)) continue;
+        await auth.loadMoreTracksForPlaylist(
+          playlist.id,
+          minBpm: widget.mode.minBpm,
+          maxBpm: widget.mode.maxBpm ?? 999,
+        );
+        loadedMore = true;
+        break;
+      }
+      if (!mounted) return;
+      setState(() {
+        _visibleTrackCount += _trackRevealStep;
+      });
+      if (!loadedMore) {
+        setState(() => _visibleTrackCount += 0);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingMoreModeTracks = false);
+      }
+    }
+  }
+
+  int _countQualifiedModePlaylists(
+    SpotifyAuthController auth,
+    List<TempoPlaylist> playlists,
+  ) {
+    var count = 0;
+    for (final playlist in playlists) {
+      final allTracks = auth.allTracksForPlaylist(playlist.id);
+      if (allTracks.isEmpty || auth.hasMoreTracksForPlaylist(playlist.id)) {
+        continue;
+      }
+      final inRangeTracks = auth.tracksForPlaylist(playlist.id)
+          .where((track) => widget.mode.matches(track.bpm))
+          .toList(growable: false);
+      if (inRangeTracks.isNotEmpty && inRangeTracks.length == allTracks.length) {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  int _averageBpm(List<SpotifyTrack> tracks) {
+    if (tracks.isEmpty) return widget.mode.minBpm;
+    final sum = tracks.fold<int>(0, (total, track) => total + track.bpm);
+    return (sum / tracks.length).round();
+  }
+
+  String _modeTrackKey(SpotifyTrack track) {
+    final uri = track.spotifyUri.trim();
+    if (uri.isNotEmpty) return uri;
+    final id = track.id.trim();
+    if (id.isNotEmpty) return id;
+    return '${track.title.toLowerCase()}|${track.artistLine.toLowerCase()}';
+  }
+
+  Future<void> _playModeTrack(
+    List<_ModeTrackEntry> filteredTracks,
+    _ModeTrackEntry selectedTrack,
+  ) async {
+    if (_isLaunchingTrack || filteredTracks.isEmpty) return;
+    setState(() => _isLaunchingTrack = true);
+
+    try {
+      final auth = AuthScope.read(context);
+      final candidatePlaylists = widget.playlists
+          .where(
+            (playlist) => (playlist.spotifyUri ?? '').startsWith('spotify:playlist:'),
+          )
+          .toList(growable: false);
+      for (final playlist in candidatePlaylists) {
+        if (!mounted) return;
+        await auth.ensureAllTracksLoadedForPlaylist(
+          playlist.id,
+          minBpm: widget.mode.minBpm,
+          maxBpm: widget.mode.maxBpm ?? 999,
+        );
+      }
+
+      final spotifyTracks = <SpotifyTrack>[];
+      final seenTrackKeys = <String>{};
+      for (final playlist in candidatePlaylists) {
+        final allTracks = auth.allTracksForPlaylist(playlist.id);
+        if (allTracks.isEmpty) continue;
+        final inRangeTracks = auth.tracksForPlaylist(playlist.id)
+            .where((track) => widget.mode.matches(track.bpm))
+            .toList(growable: false);
+        final playlistFullyEvaluated = !auth.hasMoreTracksForPlaylist(
+          playlist.id,
+        );
+        final allTracksInRange =
+            playlistFullyEvaluated &&
+            inRangeTracks.isNotEmpty &&
+            inRangeTracks.length == allTracks.length;
+        if (allTracksInRange || !playlistFullyEvaluated) continue;
+        for (final track in inRangeTracks) {
+          final trackKey = _modeTrackKey(track);
+          if (!seenTrackKeys.add(trackKey)) {
+            continue;
+          }
+          spotifyTracks.add(track);
+        }
+      }
+      if (spotifyTracks.isEmpty) return;
+
+      final modePlaylist = TempoPlaylist(
+        id: 'mode-${widget.mode.label}-${widget.mode.minBpm}-${widget.mode.maxBpm ?? 999}',
+        title: widget.mode.label,
+        subtitle: 'Tracks collected from your Spotify playlists',
+        imageAsset: selectedTrack.imageAsset,
+        bpm: _averageBpm(spotifyTracks),
+        trackCount: spotifyTracks.length,
+        durationMinutes:
+            (spotifyTracks.fold<int>(0, (sum, track) => sum + track.durationMs) / 60000)
+                .round(),
+        category: 'Mode',
+        mood: selectedTrack.mood,
+        colors: [widget.mode.accent, AppColors.primaryBright],
+      );
+
+      final sessionPlaylistUri = await auth.ensureSessionPlaylistForBpm(
+        sourcePlaylist: modePlaylist,
+        tracks: spotifyTracks,
+        minBpm: widget.mode.minBpm,
+        maxBpm: widget.mode.maxBpm ?? 999,
+        generatedTitle:
+            '${widget.mode.label} ${widget.mode.minBpm} - ${widget.mode.maxBpm ?? 999}bpm',
+        generatedDescription:
+            'Auto-generated by stempo for ${widget.mode.label} mode in the ${widget.mode.rangeLabel} lane.',
+      );
+
+      final selectedSpotifyTrack = spotifyTracks.firstWhere(
+        (track) => track.spotifyUri == selectedTrack.spotifyUri,
+        orElse: () => spotifyTracks.first,
+      );
+
+      bool opened = false;
+      if (sessionPlaylistUri != null && sessionPlaylistUri.isNotEmpty) {
+        opened = await auth.startPlaylistPlaybackAtTrack(
+          playlistUri: sessionPlaylistUri,
+          trackUri: selectedSpotifyTrack.spotifyUri,
+        );
+        if (!opened) {
+          opened = await _openInAppOrRemote(sessionPlaylistUri);
+        }
+      } else {
+        opened = await _openInAppOrRemote(selectedSpotifyTrack.spotifyUri);
+      }
+
+      if (!mounted) return;
+      if (!opened) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Could not start playback. Open Spotify on your phone and try again.',
+            ),
+          ),
+        );
+      } else {
+        widget.onTrackStarted(selectedSpotifyTrack);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLaunchingTrack = false);
+      }
+    }
+  }
+
+  Future<bool> _openInAppOrRemote(String spotifyUri) async {
+    try {
+      final remotePlayed = await SpotifyRemoteService.instance.playUri(
+        spotifyUri,
+      );
+      if (remotePlayed) return true;
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  @override
+  bool get wantKeepAlive => true;
+}
+
+class _ModeShowMoreButton extends StatelessWidget {
+  const _ModeShowMoreButton({required this.label, this.onTap});
+
+  final String label;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: TextButton(
+        onPressed: onTap,
+        style: TextButton.styleFrom(
+          foregroundColor: AppColors.primaryBright,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        ),
+        child: Text(
+          label,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
       ),
     );
   }
@@ -1179,10 +1741,17 @@ class _ModePlaylistCard extends StatelessWidget {
 }
 
 class _ModeTrackCard extends StatelessWidget {
-  const _ModeTrackCard({required this.track, required this.accent});
+  const _ModeTrackCard({
+    required this.track,
+    required this.accent,
+    required this.onPlay,
+    this.isLaunching = false,
+  });
 
   final _ModeTrackEntry track;
   final Color accent;
+  final VoidCallback onPlay;
+  final bool isLaunching;
 
   @override
   Widget build(BuildContext context) {
@@ -1244,6 +1813,31 @@ class _ModeTrackCard extends StatelessWidget {
               ),
             ],
           ),
+          const SizedBox(width: 10),
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: isLaunching ? null : onPlay,
+            child: Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: accent,
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: [
+                  BoxShadow(
+                    color: accent.withValues(alpha: 0.28),
+                    blurRadius: 16,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: Icon(
+                isLaunching ? Icons.hourglass_top_rounded : Icons.play_arrow_rounded,
+                color: Colors.black,
+                size: 24,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -1279,18 +1873,24 @@ class _ModeOption {
 
 class _ModeTrackEntry {
   const _ModeTrackEntry({
+    required this.id,
     required this.title,
     required this.artist,
     required this.bpm,
     required this.imageAsset,
     required this.mood,
+    required this.spotifyUri,
+    required this.durationMs,
   });
 
+  final String id;
   final String title;
   final String artist;
   final int bpm;
   final String imageAsset;
   final String mood;
+  final String spotifyUri;
+  final int durationMs;
 }
 
 const _modeOptions = [
@@ -1340,58 +1940,6 @@ const _modeOptions = [
     minBpm: 170,
     icon: Icons.bolt_rounded,
     accent: AppColors.cinemaRed,
-  ),
-];
-
-const _fallbackModeTracks = [
-  _ModeTrackEntry(
-    title: 'Northern Avenue',
-    artist: 'Marlow Fade',
-    bpm: 96,
-    imageAsset: 'assets/images/musicCover6.webp',
-    mood: 'Calm',
-  ),
-  _ModeTrackEntry(
-    title: 'Ocean Drive',
-    artist: 'Duke Dumont',
-    bpm: 112,
-    imageAsset: 'assets/images/musicCover5.webp',
-    mood: 'Euphoric',
-  ),
-  _ModeTrackEntry(
-    title: 'Afterlight Steps',
-    artist: 'Luma Cove',
-    bpm: 118,
-    imageAsset: 'assets/images/musicCover8.webp',
-    mood: 'Focused',
-  ),
-  _ModeTrackEntry(
-    title: 'Push Forward',
-    artist: 'Vector Bloom',
-    bpm: 128,
-    imageAsset: 'assets/images/musicCover2.webp',
-    mood: 'Driven',
-  ),
-  _ModeTrackEntry(
-    title: 'Momentum Line',
-    artist: 'Night Shift',
-    bpm: 138,
-    imageAsset: 'assets/images/musicCover7.webp',
-    mood: 'Driven',
-  ),
-  _ModeTrackEntry(
-    title: 'Seven Nation Army',
-    artist: 'The White Stripes',
-    bpm: 154,
-    imageAsset: 'assets/images/musicCover3.webp',
-    mood: 'Dark',
-  ),
-  _ModeTrackEntry(
-    title: 'Runaway Pulse',
-    artist: 'Neon Harbor',
-    bpm: 176,
-    imageAsset: 'assets/images/musicCover4.webp',
-    mood: 'Euphoric',
   ),
 ];
 

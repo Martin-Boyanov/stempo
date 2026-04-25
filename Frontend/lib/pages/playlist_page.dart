@@ -267,29 +267,6 @@ class _PlaylistPageState extends State<PlaylistPage> {
         return;
       }
 
-      // Navigate to Now Playing
-      final displayTrack = startTrack ?? tracks.first;
-      context.push(
-        '/now-playing',
-        extra: NowPlayingPageArgs(
-          trackTitle: displayTrack.title,
-          trackArtist: displayTrack.artistLine,
-          trackImageAsset: displayTrack.imageUrl.isNotEmpty == true
-              ? displayTrack.imageUrl
-              : widget.args.playlist.imageAsset,
-          trackBpm: displayTrack.bpm,
-          userCadence: widget.args.userCadence,
-          spotifyUri: sessionPlaylistUri ?? displayTrack.spotifyUri,
-          allowedTrackUris: tracks
-              .map((t) => t.spotifyUri)
-              .where((uri) => uri.isNotEmpty)
-              .toList(growable: false),
-          trackBpmsByUri: {
-            for (final track in tracks)
-              if (track.spotifyUri.isNotEmpty) track.spotifyUri: track.bpm,
-          },
-        ),
-      );
     } finally {
       if (mounted) {
         setState(() => _isLaunching = false);
@@ -349,7 +326,16 @@ class _PlaylistPageState extends State<PlaylistPage> {
                               if (context.canPop()) {
                                 context.pop();
                               } else {
-                                context.go('/home');
+                                switch (widget.args.sourceTab) {
+                                  case PlaylistSourceTab.home:
+                                    context.go('/home?tab=home');
+                                  case PlaylistSourceTab.search:
+                                    context.go('/home?tab=search');
+                                  case PlaylistSourceTab.library:
+                                    context.go('/home?tab=library');
+                                  case PlaylistSourceTab.modes:
+                                    context.go('/home?tab=modes');
+                                }
                               }
                             },
                           ),
