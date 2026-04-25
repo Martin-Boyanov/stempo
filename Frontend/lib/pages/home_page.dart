@@ -87,8 +87,7 @@ class _HomePageState extends State<HomePage>
   bool _hasStepPermission = false;
   bool _isRefreshingSteps = false;
   StreamSubscription<StepCount>? _stepSubscription;
-  int? _initialPedometerCount;
-  int _liveAddedSteps = 0;
+  int? _lastPedometerCount;
   bool _isTrackingCadence = false;
   bool _isTrackerClosing = false;
   int _trackedSteps = 0;
@@ -545,14 +544,17 @@ class _HomePageState extends State<HomePage>
       (StepCount event) {
         debugPrint('PEDOMETER EVENT: ${event.steps} steps');
         if (!mounted) return;
-        if (_initialPedometerCount == null) {
-          _initialPedometerCount = event.steps;
-          debugPrint('PEDOMETER INITIALIZED: $_initialPedometerCount');
+        if (_lastPedometerCount == null) {
+          _lastPedometerCount = event.steps;
+          debugPrint('PEDOMETER INITIALIZED: $_lastPedometerCount');
+          unawaited(_refreshTodaySteps(silent: true));
           return;
         }
+        final delta = math.max(0, event.steps - _lastPedometerCount!);
+        _lastPedometerCount = event.steps;
         setState(() {
-          _liveAddedSteps = event.steps - _initialPedometerCount!;
-          debugPrint('PEDOMETER LIVE ADDED: $_liveAddedSteps');
+          _todaySteps += delta;
+          debugPrint('PEDOMETER LIVE DELTA: $delta, total=$_todaySteps');
           if (_isTrackingCadence) {
             _trackingInitialStepCount ??= event.steps;
             _trackedSteps = math.max(
@@ -601,9 +603,6 @@ class _HomePageState extends State<HomePage>
         setState(() {
           _hasStepPermission = true;
           _todaySteps = total;
-          // Reset live tracking offset so we don't double count
-          _initialPedometerCount = null;
-          _liveAddedSteps = 0;
         });
       }
     } catch (_) {
@@ -734,7 +733,7 @@ class _HomePageState extends State<HomePage>
           state: _mockState,
           pulse: _pulseController,
           userCadence: auth.userCadence,
-          todaySteps: _todaySteps + _liveAddedSteps,
+          todaySteps: _todaySteps,
           trackBpm: _currentTrackBpm ?? _mockState.trackBpm,
           syncGap: _syncGap(auth.userCadence),
           recentPlaylists: playlists,
@@ -788,7 +787,7 @@ class _HomePageState extends State<HomePage>
           state: _mockState,
           pulse: _pulseController,
           userCadence: auth.userCadence,
-          todaySteps: _todaySteps + _liveAddedSteps,
+          todaySteps: _todaySteps,
           trackBpm: _currentTrackBpm ?? _mockState.trackBpm,
           syncGap: _syncGap(auth.userCadence),
           recentPlaylists: playlists,
