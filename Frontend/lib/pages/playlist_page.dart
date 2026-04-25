@@ -272,7 +272,6 @@ class _PlaylistPageState extends State<PlaylistPage> {
         return;
       }
 
-      // Navigate to Now Playing
       final displayTrack = startTrack ?? tracks.first;
       final currentCadence = auth.userCadence;
       context.push(
@@ -355,7 +354,16 @@ class _PlaylistPageState extends State<PlaylistPage> {
                               if (context.canPop()) {
                                 context.pop();
                               } else {
-                                context.go('/home');
+                                switch (widget.args.sourceTab) {
+                                  case PlaylistSourceTab.home:
+                                    context.go('/home?tab=home');
+                                  case PlaylistSourceTab.search:
+                                    context.go('/home?tab=search');
+                                  case PlaylistSourceTab.library:
+                                    context.go('/home?tab=library');
+                                  case PlaylistSourceTab.modes:
+                                    context.go('/home?tab=modes');
+                                }
                               }
                             },
                           ),

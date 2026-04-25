@@ -5,6 +5,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:palette_generator/palette_generator.dart';
 
 import '../controllers/spotify_remote_service.dart';
+import '../state/auth_providers.dart';
 import '../ui/theme/app_fx.dart';
 import '../ui/theme/colors.dart';
 import '../ui/widgets/media_cover.dart';
@@ -113,6 +114,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
       if (!mounted) return;
       unawaited(_enforceOrderedPlayback(state));
       _setStateSafely(() {
+        final trackChanged = _currentTrackUri != state.trackUri;
         if (_currentTrackUri != state.trackUri) {
           _lastAutoAdvancedSourceUri = '';
         }
@@ -120,6 +122,8 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
         final dynamicBpm = _trackBpmsByUri[state.trackUri];
         if (dynamicBpm != null) {
           _trackBpm = dynamicBpm;
+        } else if (trackChanged && state.trackUri.isNotEmpty) {
+          _trackBpm = 0;
         }
         if (state.trackName.isNotEmpty) {
           _trackTitle = state.trackName;
@@ -139,6 +143,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
         _repeatMode = state.repeatMode;
         _updatePalette();
       });
+      unawaited(_resolveCurrentTrackBpm(state.trackUri));
     });
 
     try {
@@ -150,6 +155,8 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
         final dynamicBpm = _trackBpmsByUri[playerState.trackUri];
         if (dynamicBpm != null) {
           _trackBpm = dynamicBpm;
+        } else if (playerState.trackUri.isNotEmpty) {
+          _trackBpm = 0;
         }
         if (playerState.trackName.isNotEmpty) {
           _trackTitle = playerState.trackName;
@@ -170,9 +177,28 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
         _updatePalette();
       });
       unawaited(_enforceOrderedPlayback(playerState));
+      unawaited(_resolveCurrentTrackBpm(playerState.trackUri));
     } catch (_) {
       // Keep the screen usable even when the remote player is unavailable.
     }
+  }
+
+  Future<void> _resolveCurrentTrackBpm(String trackUri) async {
+    final trimmedUri = trackUri.trim();
+    if (trimmedUri.isEmpty) return;
+
+    final cachedBpm = _trackBpmsByUri[trimmedUri];
+    if (cachedBpm != null && cachedBpm > 0) {
+      if (mounted && _currentTrackUri == trimmedUri && _trackBpm != cachedBpm) {
+        _setStateSafely(() => _trackBpm = cachedBpm);
+      }
+      return;
+    }
+
+    final resolvedBpm = await AuthScope.read(context).resolveTrackBpm(trimmedUri);
+    if (!mounted || _currentTrackUri != trimmedUri || resolvedBpm == null) return;
+    _trackBpmsByUri[trimmedUri] = resolvedBpm;
+    _setStateSafely(() => _trackBpm = resolvedBpm);
   }
 
   Future<void> _enforceOrderedPlayback(SpotifyRemotePlayerState state) async {
