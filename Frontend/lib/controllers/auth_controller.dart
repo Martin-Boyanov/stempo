@@ -860,6 +860,10 @@ class SpotifyAuthController extends ChangeNotifier {
         playlistTitle: playlistTitle,
       );
       if (existingPlaylist != null) {
+        await _syncPlaylistTracks(
+          playlistId: existingPlaylist.playlistId,
+          tracks: tracks,
+        );
         _sessionPlaylistCache[cacheKey] = _SessionPlaylistCacheEntry(
           playlistUri: existingPlaylist.playlistUri,
           signature: signature,
@@ -889,24 +893,7 @@ class SpotifyAuthController extends ChangeNotifier {
         'session_playlist_create_ok source=${sourcePlaylist.id} playlistId=$playlistId uri=$playlistUri',
       );
 
-      final uris = tracks
-          .map((track) => track.spotifyUri)
-          .where((uri) => uri.isNotEmpty)
-          .toList(growable: false);
-      if (uris.isEmpty) return null;
-
-      const chunkSize = 100;
-      for (var offset = 0; offset < uris.length; offset += chunkSize) {
-        final end = min(offset + chunkSize, uris.length);
-        final chunk = uris.sublist(offset, end);
-        _debugTrackLoad(
-          'session_playlist_add_chunk playlistId=$playlistId count=${chunk.length}',
-        );
-        await _postJson(
-          'https://api.spotify.com/v1/playlists/$playlistId/tracks',
-          {'uris': chunk},
-        );
-      }
+      await _syncPlaylistTracks(playlistId: playlistId, tracks: tracks);
 
       _sessionPlaylistCache[cacheKey] = _SessionPlaylistCacheEntry(
         playlistUri: playlistUri,
@@ -931,6 +918,41 @@ class SpotifyAuthController extends ChangeNotifier {
         'session_playlist_error source=${sourcePlaylist.id} detail=$e',
       );
       return null;
+    }
+  }
+
+  Future<void> _syncPlaylistTracks({
+    required String playlistId,
+    required List<SpotifyTrack> tracks,
+  }) async {
+    final uris = tracks
+        .map((track) => track.spotifyUri)
+        .where((uri) => uri.isNotEmpty)
+        .toList(growable: false);
+    if (uris.isEmpty) {
+      throw const FormatException('No playable Spotify track URIs were found.');
+    }
+
+    final firstChunk = uris.take(100).toList(growable: false);
+    _debugTrackLoad(
+      'session_playlist_replace_chunk playlistId=$playlistId count=${firstChunk.length}',
+    );
+    await _putJson(
+      'https://api.spotify.com/v1/playlists/$playlistId/tracks',
+      {'uris': firstChunk},
+    );
+
+    const chunkSize = 100;
+    for (var offset = 100; offset < uris.length; offset += chunkSize) {
+      final end = min(offset + chunkSize, uris.length);
+      final chunk = uris.sublist(offset, end);
+      _debugTrackLoad(
+        'session_playlist_add_chunk playlistId=$playlistId count=${chunk.length}',
+      );
+      await _postJson(
+        'https://api.spotify.com/v1/playlists/$playlistId/tracks',
+        {'uris': chunk},
+      );
     }
   }
 
@@ -1236,6 +1258,65 @@ class SpotifyAuthController extends ChangeNotifier {
           message: payload,
         );
       }
+      final json = jsonDecode(payload);
+      if (json is! Map<String, dynamic>) {
+        throw _ApiRequestException(
+          url: url,
+          statusCode: response.statusCode,
+          message: 'Response is not a JSON object.',
+        );
+      }
+      return json;
+    } on SocketException catch (e) {
+      throw _ApiRequestException(url: url, message: e.message);
+    } on TimeoutException {
+      throw _ApiRequestException(url: url, message: 'Request timed out.');
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  Future<Map<String, dynamic>> _putJson(
+    String url,
+    Map<String, dynamic> body,
+  ) async {
+    final client = HttpClient()..connectionTimeout = _spotifyRequestTimeout;
+    try {
+      final request = await client
+          .putUrl(Uri.parse(url))
+          .timeout(_spotifyRequestTimeout);
+      request.headers.set(
+        HttpHeaders.authorizationHeader,
+        'Bearer $_accessToken',
+      );
+      request.headers.contentType = ContentType.json;
+      request.write(jsonEncode(body));
+
+      final response = await request.close().timeout(_spotifyRequestTimeout);
+      final payload = await response
+          .transform(utf8.decoder)
+          .join()
+          .timeout(_spotifyRequestTimeout);
+      _debugSpotifyHttp(
+        'PUT',
+        url,
+        statusCode: response.statusCode,
+        requestBody: jsonEncode(body),
+        responseBody: payload,
+      );
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw _ApiRequestException(
+          url: url,
+          statusCode: response.statusCode,
+          message: payload,
+        );
+      }
+
+      if (payload.trim().isEmpty) {
+        return const <String, dynamic>{};
+      }
+
       final json = jsonDecode(payload);
       if (json is! Map<String, dynamic>) {
         throw _ApiRequestException(
