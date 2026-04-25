@@ -1612,10 +1612,7 @@ class _ModesResultsScreenState extends State<_ModesResultsScreen>
             ),
           ),
           const SizedBox(height: 18),
-          _SectionLabel(
-            title: 'Tracks',
-            trailing: 'Ordered exactly like the created playlist',
-          ),
+          const _SectionLabel(title: 'Tracks', trailing: ''),
           const SizedBox(height: 12),
           if (filteredTracks.isEmpty)
             const _InlineEmptyState(

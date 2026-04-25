@@ -224,10 +224,12 @@ class _BpmSettingsCardState extends State<_BpmSettingsCard> {
                   const SizedBox(width: 12),
                   const Expanded(
                     child: Text(
-                      'Target Cadence',
+                      'Target\nCadence',
+                      maxLines: 2,
                       style: TextStyle(
                         color: AppColors.textPrimary,
-                        fontSize: 16,
+                        fontSize: 15,
+                        height: 1.05,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
