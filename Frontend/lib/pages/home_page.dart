@@ -369,7 +369,28 @@ class _HomePageState extends State<HomePage>
       return;
     }
 
-    final targetBpm = _trackedSteps * 3;
+    final rawBpm = _trackedSteps * 3;
+    if (rawBpm < 35) {
+      if (!mounted) return;
+      setState(() {
+        _isTrackingCadence = false;
+        _trackingInitialStepCount = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Please take more steps so we can calculate your BPM accurately.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final targetBpm = switch (rawBpm) {
+      >= 35 && <= 69 => rawBpm * 2,
+      > 130 => (rawBpm / 2).round(),
+      _ => rawBpm,
+    };
     AuthScope.read(context).userCadence = targetBpm;
 
     if (!mounted) return;
